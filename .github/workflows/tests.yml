@@ -1,0 +1,27 @@
+name: Tests
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install conversion tools
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils ghostscript libgxps-utils
+      - name: Install test dependencies
+        run: python -m pip install -r terminzettel-installer/requirements-dev.txt
+      - name: Shell syntax
+        run: bash -n terminzettel-installer/install-terminzettel.sh
+      - name: Tests (synthetic fixtures only)
+        run: python -B -m unittest discover -s terminzettel-installer/tests -v

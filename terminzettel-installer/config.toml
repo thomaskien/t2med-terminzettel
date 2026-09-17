@@ -1,25 +1,14 @@
 # /etc/terminzettel/config.toml
-# T2med-Terminbeleg -> 58-mm-Terminbon -> SMB RAW-Drucker
+# T2med-Terminbeleg -> 58-mm-Terminbon -> lokale CUPS-Warteschlange
 
 [input]
 # Wird nur für bereits als Text angelieferte Jobs benötigt.
 text_encoding = "utf-8"
 
 [output]
-transport = "smb"
-server = "localhost"
-share = "TMm10"
-
-# escpos = Epson/ESC-POS inklusive Steuerzeichen und Schnitt
-# text   = reiner Text ohne ESC/POS-Steuerzeichen
-format = "escpos"
-
-# Leer = Gastzugriff / -N. Falls Authentifizierung nötig ist, hier eintragen.
-username = ""
-password = ""
-domain = ""
-
-# Nur bei output.format = "text"
+# Bereits vorhandene lokale CUPS-Warteschlange.
+queue = "TMm10"
+format = "escpos"  # escpos | text
 text_encoding = "utf-8"
 
 [escpos]
@@ -61,7 +50,19 @@ bold = false
 text = """
 """
 
-[debug]
-# Aus Datenschutzgründen standardmäßig leer: nichts dauerhaft speichern.
-save_raw_dir = ""
-save_input_dir = ""
+[calendar_qr]
+enabled = true
+# Fester Praxistitel. Keine Patientendaten oder Termintypen einsetzen.
+summary = "Termin Arztpraxis"
+timezone = "Europe/Berlin"
+default_duration_minutes = 15
+
+# Optional die Praxisadresse im Kalendereintrag anzeigen.
+include_location = false
+location = ""
+
+caption = "Alle Termine in Kalender übernehmen"
+error_correction = "M"
+quiet_zone_modules = 4
+max_width_dots = 360
+min_module_dots = 3

@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import shutil
+import resource
+import stat
+import time
+import fcntl
 import subprocess
 import sys
 import tempfile
@@ -22,6 +25,56 @@ except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore
 
 DEFAULT_CONFIG = "/etc/terminzettel/config.toml"
+RUNTIME = Path("/run/terminzettel")
+SPOOL = RUNTIME / "spool"
+WORK = RUNTIME / "work"
+CUPS_SOCKET = "/run/cups/cups.sock"
+MAX_INPUT = 8 * 1024 * 1024
+JOB_TIMEOUT = 60
+
+
+class TicketError(ValueError):
+    """Nur feste, vom Programm vorgegebene Meldungen; niemals Beleginhalte."""
+
+
+def safe_text(text: str) -> str:
+    if any((ord(char) < 32 and char not in "\n\r\t\f") or 127 <= ord(char) < 160
+           for char in text):
+        raise TicketError("Der Beleg enthält unzulässige Steuerzeichen.")
+    return text
+
+
+def process_cannot_swap() -> bool:
+    if len(Path("/proc/swaps").read_text().splitlines()) <= 1:
+        return True
+    for line in Path("/proc/self/cgroup").read_text().splitlines():
+        if line.startswith("0::"):
+            group = Path("/sys/fs/cgroup") / line[3:].lstrip("/")
+            while group != Path("/sys/fs/cgroup"):
+                limit = group / "memory.swap.max"
+                if limit.is_file() and limit.read_text().strip() == "0":
+                    return True
+                group = group.parent
+    return False
+
+
+def ensure_runtime() -> None:
+    """Kein stiller Rückfall auf ein Verzeichnis auf der SD-Karte."""
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    try:
+        mounted = False
+        for line in Path("/proc/self/mountinfo").read_text().splitlines():
+            before, after = line.split(" - ", 1)
+            fields, fs = before.split(), after.split()
+            if fields[4] == str(RUNTIME):
+                mounted = fs[0] == "tmpfs" and "noswap" in fs[2].split(",")
+        if not mounted or not process_cannot_swap():
+            raise TicketError("RAM-Schutz fehlt. Bitte den Installer erneut ausführen.")
+        if not WORK.is_dir() or not SPOOL.is_dir():
+            raise TicketError("RAM-Verzeichnisse fehlen. Bitte den Installer erneut ausführen.")
+    except OSError:
+        raise TicketError("RAM-Schutz konnte nicht geprüft werden.") from None
+
 
 WEEKDAYS = {
     "Mo": "Mo.", "Di": "Di.", "Mi": "Mi.", "Do": "Do.",
@@ -58,158 +111,135 @@ def eprint(*args: object) -> None:
     print(*args, file=sys.stderr)
 
 
-def log(msg: str) -> None:
-    eprint(f"terminzettel: {msg}")
-    logger = shutil.which("logger")
-    if logger:
-        try:
-            subprocess.run([logger, "-t", "terminzettel", msg], check=False,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
-
 def load_config(path: str) -> dict[str, Any]:
     with open(path, "rb") as fh:
-        return tomllib.load(fh)
+        cfg = tomllib.load(fh)
+    if cfg.get("debug") or cfg.get("output", {}).get("transport", "cups") != "cups":
+        raise TicketError("Alte Konfiguration: Bitte die neue Beispieldatei verwenden.")
+    return cfg
 
 
-def run_checked(args: list[str], *, input_bytes: bytes | None = None) -> bytes:
-    proc = subprocess.run(args, input=input_bytes, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, check=False)
+def run_checked(args: list[str], *, input_bytes: bytes | None = None,
+                temp_dir: str | None = None) -> bytes:
+    env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8",
+           "HOME": "/nonexistent", "TMPDIR": temp_dir or str(WORK)}
+    try:
+        proc = subprocess.run(args, input=input_bytes, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL, check=False, timeout=30, env=env)
+    except (OSError, subprocess.TimeoutExpired):
+        raise TicketError("Die Dateiumwandlung konnte nicht abgeschlossen werden.") from None
     if proc.returncode != 0:
-        stderr = proc.stderr.decode("utf-8", "replace").strip()
-        raise RuntimeError(f"Befehl fehlgeschlagen ({proc.returncode}): {' '.join(args)}\n{stderr}")
+        raise TicketError("Die Dateiumwandlung ist fehlgeschlagen.")
+    if len(proc.stdout) > MAX_INPUT:
+        raise TicketError("Der umgewandelte Beleg ist zu groß.")
     return proc.stdout
 
 
-def detect_input(path: str) -> str:
-    with open(path, "rb") as fh:
-        head = fh.read(16)
-    if head.startswith(b"%PDF-"):
-        return "pdf"
-    if head.startswith(b"%!PS"):
-        return "postscript"
-    if head.startswith(b"PK\x03\x04"):
-        return "xps"
-    return "text"
-
-
-def extract_text(path: str, cfg: dict[str, Any]) -> str:
-    kind = detect_input(path)
-    input_cfg = cfg.get("input", {})
-    log(f"Eingabeformat erkannt: {kind}")
-
-    if kind == "pdf":
-        return run_checked(["pdftotext", "-layout", path, "-"]).decode("utf-8", "replace")
-
-    if kind == "postscript":
-        with tempfile.TemporaryDirectory(prefix="terminzettel-") as td:
-            pdf = os.path.join(td, "input.pdf")
-            run_checked([
-                "gs", "-q", "-dNOPAUSE", "-dBATCH", "-sDEVICE=pdfwrite",
-                f"-sOutputFile={pdf}", path,
-            ])
-            return run_checked(["pdftotext", "-layout", pdf, "-"]).decode("utf-8", "replace")
-
-    if kind == "xps":
-        gxps = shutil.which("gxps2pdf")
-        if not gxps:
-            raise RuntimeError(
-                "XPS-Druckjob erkannt, aber gxps2pdf fehlt. Installiere Paket libgxps-utils "
-                "oder verwende auf dem Client einen PDF/PostScript-Druckertreiber."
-            )
-        with tempfile.TemporaryDirectory(prefix="terminzettel-") as td:
-            pdf = os.path.join(td, "input.pdf")
-            run_checked([gxps, path, pdf])
-            return run_checked(["pdftotext", "-layout", pdf, "-"]).decode("utf-8", "replace")
-
-    encoding = str(input_cfg.get("text_encoding", "utf-8"))
-    data = Path(path).read_bytes()
+def extract_text(data: bytes, cfg: dict[str, Any]) -> str:
+    if len(data) > MAX_INPUT:
+        raise TicketError("Der Beleg ist zu groß (höchstens 8 MiB).")
+    if data.startswith(b"%PDF-"):
+        return run_checked(["pdftotext", "-layout", "-", "-"], input_bytes=data).decode("utf-8", "strict")
+    if data.startswith((b"%!PS", b"PK\x03\x04")):
+        with tempfile.TemporaryDirectory(prefix="job-", dir=WORK) as td:
+            # Der Bereinigungsdienst überspringt noch aktive Aufträge.
+            with open(Path(td) / ".lock", "w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                source, pdf = Path(td) / "input", Path(td) / "input.pdf"
+                source.write_bytes(data)
+                if data.startswith(b"%!PS"):
+                    run_checked(["gs", "-q", "-dSAFER", "-dNOPAUSE", "-dBATCH", "-sDEVICE=pdfwrite",
+                                 "-sOutputFile=" + str(pdf), str(source)], temp_dir=td)
+                else:
+                    run_checked(["gxps2pdf", str(source), str(pdf)], temp_dir=td)
+                return run_checked(["pdftotext", "-layout", str(pdf), "-"], temp_dir=td).decode("utf-8", "strict")
+    encoding = str(cfg.get("input", {}).get("text_encoding", "utf-8"))
     try:
-        return data.decode(encoding)
-    except UnicodeDecodeError:
-        return data.decode("latin-1", "replace")
+        return data.decode(encoding, "strict")
+    except (UnicodeError, LookupError):
+        raise TicketError("Textkodierung ungültig. Bitte PDF oder PostScript verwenden.") from None
+
+
+def read_spool(path: str) -> bytes:
+    """Nur eigene Samba-Spooldateien übernehmen und sofort aus dem Verzeichnis entfernen."""
+    source = Path(os.path.abspath(path))
+    if source.parent != SPOOL:
+        raise TicketError("Nur Dateien aus dem Terminzettel-Spoolverzeichnis sind zulässig.")
+    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as fh:
+        metadata = os.fstat(fh.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid() or metadata.st_nlink != 1:
+            raise TicketError("Ungültige Spooldatei.")
+        if source.lstat().st_ino != metadata.st_ino:
+            raise TicketError("Spooldatei wurde während der Verarbeitung geändert.")
+        source.unlink()
+        ensure_runtime()
+        data = fh.read(MAX_INPUT + 1)
+    if len(data) > MAX_INPUT:
+        raise TicketError("Der Beleg ist zu groß (höchstens 8 MiB).")
+    return data
 
 
 def parse_t2med(text: str) -> ParsedTicket:
-    text = text.replace("\u00a0", " ").replace("\r\n", "\n").replace("\r", "\n")
-    pages = text.split("\f")
+    text = safe_text(text).replace("\u00a0", " ").replace("\r\n", "\n").replace("\r", "\n")
+    pages = [page for page in text.split("\f") if page.strip()]
+    if len(pages) != 1:
+        raise ValueError("Genau eine nichtleere Seite erforderlich.")
+    lines = pages[0].expandtabs(8).splitlines()
+    headers = [i for i, line in enumerate(lines) if "Terminzeitpunkt" in line and "Termintyp" in line]
+    if len(headers) != 1:
+        raise ValueError("Genau ein Tabellenkopf Terminzeitpunkt / Termintyp erforderlich.")
+    header = headers[0]
+    names = [line.strip() for line in lines[:header] if line.strip() and not line.strip().upper().startswith("TERMINE")]
+    if not names:
+        raise ValueError("Patientenname fehlt.")
     appointments: list[Appointment] = []
-    patient = ""
-
-    for page in pages:
-        lines = page.splitlines()
-        header_idx = None
-        for i, line in enumerate(lines):
-            if "Terminzeitpunkt" in line and "Termintyp" in line:
-                header_idx = i
-                break
-        if header_idx is None:
+    current = None
+    type_column = 0
+    for line in lines[header + 1:]:
+        if not line.strip():
             continue
-
-        if not patient:
-            candidates: list[str] = []
-            for line in lines[:header_idx]:
-                s = line.strip()
-                if not s:
-                    continue
-                if s.upper().startswith("TERMINE"):
-                    continue
-                candidates.append(s)
-            if candidates:
-                patient = candidates[-1]
-
-        current: Appointment | None = None
-        blank_run = 0
-        found_on_page = False
-        for line in lines[header_idx + 1:]:
-            if not line.strip():
-                blank_run += 1
-                if found_on_page and blank_run >= 2:
-                    break
-                continue
-            blank_run = 0
-
-            m = APPOINTMENT_RE.match(line)
-            if m:
-                current = Appointment(
-                    weekday=WEEKDAYS[m.group("weekday")],
-                    date=m.group("date"),
-                    time=m.group("time"),
-                    kind=re.sub(r"\s+", " ", m.group("type").strip()),
-                )
-                appointments.append(current)
-                found_on_page = True
-                continue
-
-            # Wrapped appointment type: only while still inside the appointment table.
-            if current is not None and found_on_page:
-                s = line.strip()
-                if s and not re.fullmatch(r"[\d\s./+()_-]+", s):
-                    current.kind = f"{current.kind} {re.sub(r'\s+', ' ', s)}".strip()
-
+        match = APPOINTMENT_RE.fullmatch(line)
+        if match:
+            try:
+                date_time = datetime.strptime(match.group("date") + " " + match.group("time"), "%d.%m.%Y %H:%M")
+            except ValueError:
+                raise ValueError("Ungültiges Datum oder ungültige Uhrzeit.") from None
+            current = Appointment(
+                weekday=WEEKDAYS[match.group("weekday")],
+                date=date_time.strftime("%d.%m.%Y"),
+                time=date_time.strftime("%H:%M"),
+                kind=" ".join(match.group("type").split()),
+            )
+            appointments.append(current)
+            type_column = match.start("type")
+            continue
+        # Auch beschädigte Terminzeilen dürfen nicht als Beschreibung verschwinden.
+        if re.match(r"^\s*(?:(?:Mo|Di|Mi|Do|Fr|Sa|So)\.?\s+)?\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b", line):
+            raise ValueError("Unvollständige oder ungültige Terminzeile.")
+        indent = len(line) - len(line.lstrip())
+        if current is not None and indent >= type_column:
+            current.kind += " " + " ".join(line.split())
+        else:
+            current = None  # Nicht eingerückter Fußtext beendet die Fortsetzung.
     if not appointments:
-        raise ValueError("Keine T2med-Termine unter 'Terminzeitpunkt / Termintyp' gefunden.")
-    if not patient:
-        patient = "Patient/in"
-
-    # De-duplicate exact rows, then sort chronologically.
-    seen: set[tuple[str, str, str]] = set()
-    unique: list[Appointment] = []
-    for appt in appointments:
-        key = (appt.date, appt.time, appt.kind)
+        raise ValueError("Keine T2med-Termine gefunden.")
+    seen = set()
+    unique = []
+    for appointment in appointments:
+        key = (appointment.date, appointment.time, appointment.kind)
         if key not in seen:
             seen.add(key)
-            unique.append(appt)
-    unique.sort(key=lambda a: a.dt)
-
-    return ParsedTicket(patient=patient, appointments=unique)
+            unique.append(appointment)
+    unique.sort(key=lambda appointment: appointment.dt)
+    return ParsedTicket(patient=names[-1], appointments=unique)
 
 
 def cfg_bool(section: dict[str, Any], key: str, default: bool) -> bool:
     val = section.get(key, default)
-    return bool(val)
+    if not isinstance(val, bool):
+        raise TicketError("Ein Konfigurationsschalter muss true oder false sein.")
+    return val
 
 
 def align_text(line: str, width: int, align: str) -> str:
@@ -234,6 +264,10 @@ class EscPosRenderer:
         self.encoding = str(esc.get("encoding", "cp858"))
         self.codepage = int(esc.get("codepage", 19))
         self.columns = int(layout.get("columns", 35))
+        if self.encoding not in ("cp858", "cp850", "cp437", "latin-1", "ascii"):
+            raise TicketError("Für ESC/POS eine unterstützte Einbyte-Kodierung verwenden.")
+        if not 8 <= self.columns <= 64 or not 0 <= self.codepage <= 255:
+            raise TicketError("Ungültige Druckbreite oder Codepage.")
         self.buf = bytearray()
         self._align = "left"
         self._bold = False
@@ -290,12 +324,12 @@ class EscPosRenderer:
             self.set_bold(bold)
         if double_height is not None:
             self.set_double_height(double_height)
-        self.raw(self.encode(text) + b"\n")
+        self.raw(self.encode(safe_text(text)) + b"\n")
 
     def wrapped(self, text: str, *, align: str = "left", bold: bool = False,
                 initial_indent: str = "", subsequent_indent: str = "") -> None:
         width = max(8, self.columns - len(initial_indent))
-        chunks = textwrap.wrap(text.strip(), width=width, break_long_words=False,
+        chunks = textwrap.wrap(text.strip(), width=width, break_long_words=True,
                                break_on_hyphens=False) or [""]
         for i, chunk in enumerate(chunks):
             indent = initial_indent if i == 0 else subsequent_indent
@@ -320,13 +354,15 @@ class EscPosRenderer:
                 self.line("", align=align, bold=bold)
                 continue
             for wrapped in textwrap.wrap(logical.strip(), width=self.columns,
-                                         break_long_words=False, break_on_hyphens=False) or [""]:
+                                         break_long_words=True, break_on_hyphens=False) or [""]:
                 self.line(wrapped, align=align, bold=bold)
 
     def finish(self) -> bytes:
         esc = self.cfg.get("escpos", {})
         self.reset_style()
         feed_lines = int(esc.get("feed_lines", 4))
+        if not 0 <= feed_lines <= 20:
+            raise TicketError("Papiervorschub muss zwischen 0 und 20 liegen.")
         if feed_lines > 0:
             self.raw(b"\n" * feed_lines)
         cut = str(esc.get("cut", "partial")).lower()
@@ -347,7 +383,7 @@ def render_escpos(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
     r.init()
 
     r.block("header")
-    if str(cfg.get("header", {}).get("text", "")).strip():
+    if cfg_bool(cfg.get("header", {}), "enabled", True) and str(cfg.get("header", {}).get("text", "")).strip():
         r.line("")
 
     heading = str(layout.get("heading", "IHRE TERMINE"))
@@ -373,7 +409,7 @@ def render_escpos(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
         for appt in appts:
             prefix = f"{appt.time}  "
             available = max(8, r.columns - len(prefix))
-            chunks = textwrap.wrap(appt.kind, width=available, break_long_words=False,
+            chunks = textwrap.wrap(appt.kind, width=available, break_long_words=True,
                                    break_on_hyphens=False) or [""]
             r.line(prefix + chunks[0], align="left", bold=False)
             for chunk in chunks[1:]:
@@ -382,8 +418,41 @@ def render_escpos(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
         if group_idx < len(groups) - 1:
             r.line("")
 
+    # QR entsteht vollständig im Speicher. Ein Fehler lässt den Textbon unverändert.
+    try:
+        calendar = cfg.get("calendar_qr", {})
+        if not isinstance(calendar, dict):
+            raise ValueError("invalid QR configuration")
+        if calendar.get("enabled", False):
+            from calendar_qr import CalendarAppointment, build_icalendar, build_qr_image
+            from escpos import raster_image
+
+            if type(calendar.get("enabled")) is not bool:
+                raise ValueError("invalid QR configuration")
+            times = [CalendarAppointment(start=appointment.dt) for appointment in ticket.appointments]
+            payload = build_icalendar(times, calendar)
+            bitmap = build_qr_image(payload, calendar)
+            raster = raster_image(bitmap)
+            caption = safe_text(str(calendar.get("caption", "Alle Termine in Kalender übernehmen")))
+            addition = EscPosRenderer(cfg)
+            addition.line("")
+            addition.set_align("center")
+            addition.raw(raster)
+            addition.line("")
+            for line in textwrap.wrap(caption, width=r.columns):
+                addition.line(line, align="center")
+            r.reset_style()
+            r.raw(bytes(addition.buf))
+            # addition endete zentriert, r muss den tatsächlichen Zustand kennen.
+            r._align = addition._align
+            r.reset_style()
+    except Exception as exc:
+        # Nur feste technische Meldungen; niemals Payload oder Fremdfehlermeldungen.
+        message = "calendar QR payload too large" if type(exc).__name__ == "PayloadTooLarge" else "calendar QR generation failed"
+        eprint(message)
+
     footer_text = str(cfg.get("footer", {}).get("text", "")).strip()
-    if footer_text:
+    if cfg_bool(cfg.get("footer", {}), "enabled", True) and footer_text:
         r.line("")
         if cfg_bool(layout, "footer_separator", True):
             separator = str(layout.get("separator_char", "-"))[:1] or "-"
@@ -397,10 +466,12 @@ def render_text(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
     layout = cfg.get("layout", {})
     output = cfg.get("output", {})
     columns = int(layout.get("columns", 35))
+    if not 8 <= columns <= 64:
+        raise TicketError("Druckbreite muss zwischen 8 und 64 liegen.")
     lines: list[str] = []
 
     header = str(cfg.get("header", {}).get("text", "")).strip("\n")
-    if header:
+    if cfg_bool(cfg.get("header", {}), "enabled", True) and header:
         lines.extend(header.splitlines())
         lines.append("")
     heading = str(layout.get("heading", "IHRE TERMINE"))
@@ -419,18 +490,18 @@ def render_text(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
         for appt in appts:
             prefix = f"{appt.time}  "
             chunks = textwrap.wrap(appt.kind, max(8, columns - len(prefix)),
-                                   break_long_words=False, break_on_hyphens=False) or [""]
+                                   break_long_words=True, break_on_hyphens=False) or [""]
             lines.append(prefix + chunks[0])
             lines.extend(" " * len(prefix) + c for c in chunks[1:])
         if idx < len(groups) - 1:
             lines.append("")
 
     footer = str(cfg.get("footer", {}).get("text", "")).strip("\n")
-    if footer:
+    if cfg_bool(cfg.get("footer", {}), "enabled", True) and footer:
         lines.append("")
         lines.extend(footer.splitlines())
     lines.append("")
-    return "\n".join(lines).encode(str(output.get("text_encoding", "utf-8")), "replace")
+    return safe_text("\n".join(lines)).encode(str(output.get("text_encoding", "utf-8")), "replace")
 
 
 def render(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
@@ -442,96 +513,122 @@ def render(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
     raise ValueError(f"Unbekanntes output.format: {fmt}")
 
 
-def send_smb(payload: bytes, cfg: dict[str, Any]) -> None:
-    output = cfg.get("output", {})
-    transport = str(output.get("transport", "smb")).lower()
-    if transport != "smb":
-        raise ValueError("Derzeit ist output.transport='smb' implementiert.")
-
-    server = str(output.get("server", "localhost"))
-    share = str(output.get("share", "TMm10"))
-    username = str(output.get("username", ""))
-    password = str(output.get("password", ""))
-    domain = str(output.get("domain", ""))
-
-    with tempfile.TemporaryDirectory(prefix="terminzettel-out-") as td:
-        raw_path = os.path.join(td, "terminzettel.raw")
-        Path(raw_path).write_bytes(payload)
-
-        cmd = ["smbclient", f"//{server}/{share}"]
-        auth_path = None
-        if username:
-            auth_path = os.path.join(td, "auth")
-            with open(auth_path, "w", encoding="utf-8") as fh:
-                fh.write(f"username = {username}\n")
-                fh.write(f"password = {password}\n")
-                if domain:
-                    fh.write(f"domain = {domain}\n")
-            os.chmod(auth_path, 0o600)
-            cmd += ["-A", auth_path]
-        else:
-            cmd += ["-N"]
-
-        cmd += ["-c", f"print {raw_path}"]
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-        if proc.returncode != 0:
-            out = proc.stdout.decode("utf-8", "replace").strip()
-            err = proc.stderr.decode("utf-8", "replace").strip()
-            raise RuntimeError(
-                f"SMB-Druck nach //{server}/{share} fehlgeschlagen ({proc.returncode}).\n{out}\n{err}"
-            )
-        log(f"RAW-Druckjob an //{server}/{share} übergeben ({len(payload)} Bytes)")
+def cups_connection():
+    import cups
+    cups.setUser("terminzettel")
+    return cups, cups.Connection(host=CUPS_SOCKET)
 
 
-def maybe_save_debug(source_path: str, payload: bytes, cfg: dict[str, Any]) -> None:
-    debug = cfg.get("debug", {})
-    raw_dir = str(debug.get("save_raw_dir", "")).strip()
-    input_dir = str(debug.get("save_input_dir", "")).strip()
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-    if raw_dir:
-        Path(raw_dir).mkdir(parents=True, exist_ok=True)
-        Path(raw_dir, f"{stamp}.raw").write_bytes(payload)
-    if input_dir:
-        Path(input_dir).mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, Path(input_dir, f"{stamp}-{Path(source_path).name}"))
+def send_cups(payload: bytes, cfg: dict[str, Any]) -> None:
+    queue = str(cfg.get("output", {}).get("queue", "TMm10"))
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", queue) or queue.casefold() == "terminzettel":
+        raise TicketError("Ungültige Zielwarteschlange.")
+    cups, conn = cups_connection()
+    job = None
+    try:
+        # Weder Name noch Dateiname des Patienten gehen in die Druckauftrags-Metadaten.
+        job = conn.createJob(queue, "Terminzettel", {"job-cancel-after": str(JOB_TIMEOUT)})
+        if conn.startDocument(queue, job, "Terminzettel", "application/vnd.cups-raw", 1) != 100:
+            raise TicketError("CUPS hat den Druckauftrag abgelehnt.")
+        if conn.writeRequestData(payload, len(payload)) != 100:
+            raise TicketError("CUPS konnte den Druckauftrag nicht übernehmen.")
+        if conn.finishDocument(queue) >= 0x400:
+            raise TicketError("CUPS konnte den Druckauftrag nicht abschließen.")
+        deadline = time.monotonic() + JOB_TIMEOUT
+        while time.monotonic() < deadline:
+            try:
+                attrs = conn.getJobAttributes(job, requested_attributes=["job-state"])
+            except cups.IPPError as exc:
+                if exc.args and exc.args[0] == cups.IPP_NOT_FOUND:
+                    return  # CUPS hat den beendeten Auftrag bereits entfernt.
+                raise
+            state = attrs.get("job-state")
+            if state == 9:
+                return
+            if state in (7, 8):
+                raise TicketError("Der Druckauftrag wurde abgebrochen. Bitte den Drucker prüfen.")
+            time.sleep(1)
+        raise TicketError("Druckzeit überschritten. Auftrag wurde abgebrochen; bitte den Drucker prüfen.")
+    finally:
+        if job is not None:
+            try:
+                _, cleanup = cups_connection()
+                cleanup.cancelJob(job, purge_job=True)
+            except Exception:
+                # Der Bereinigungsdienst versucht verwaiste Aufträge erneut; alles bleibt im RAM.
+                pass
+
+
+def cleanup() -> None:
+    ensure_runtime()
+    now = time.time()
+    for source in SPOOL.iterdir():
+        try:
+            info = source.lstat()
+            if stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and info.st_nlink == 1 and now - info.st_mtime > 120:
+                source.unlink()
+        except FileNotFoundError:
+            pass
+    for directory in WORK.glob("job-*"):
+        if directory.is_symlink() or not directory.is_dir() or now - directory.stat().st_mtime < 120:
+            continue
+        try:
+            with open(directory / ".lock", "a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                shutil.rmtree(directory)
+        except (BlockingIOError, FileNotFoundError):
+            pass
+    _, conn = cups_connection()
+    for job, attrs in conn.getJobs(my_jobs=True, which_jobs="all",
+            requested_attributes=["job-name", "time-at-creation"]).items():
+        if attrs.get("job-name") == "Terminzettel" and now - attrs.get("time-at-creation", now) > 120:
+            conn.cancelJob(job, purge_job=True)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="T2med-Terminbeleg -> 58-mm RAW/ESC-POS -> SMB")
-    parser.add_argument("input", help="Spooldatei (PDF, PostScript, XPS oder Text)")
-    parser.add_argument("--config", default=os.environ.get("TERMINZETTEL_CONFIG", DEFAULT_CONFIG))
-    parser.add_argument("--extract", action="store_true", help="Nur erkannte Daten als JSON ausgeben")
-    parser.add_argument("--render", metavar="DATEI", help="Nur rendern, RAW-Ausgabe in DATEI schreiben")
+    parser = argparse.ArgumentParser(description="Einseitiger T2med-Terminbeleg auf 58-mm-Bondrucker")
+    parser.add_argument("input", nargs="?", help="Von Samba übergebene Spooldatei")
+    parser.add_argument("--config", default=DEFAULT_CONFIG)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="Beleg prüfen, ohne Druck oder Datenexport")
+    mode.add_argument("--self-test", action="store_true", help="Selbsttest mit künstlichen Daten, ohne Druck")
+    mode.add_argument("--cleanup", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
-
     try:
+        if args.self_test:
+            ticket = parse_t2med("TERMINE\nTestperson\nTerminzeitpunkt   Termintyp\nDo. 17.09.2026, 09:00 Kontrolle\n")
+            render(ticket, {})
+            print("Selbsttest erfolgreich.")
+            return 0
+        if args.cleanup:
+            cleanup()
+            return 0
+        if not args.input:
+            raise TicketError("Es fehlt eine Eingabedatei.")
+        if args.check:
+            ensure_runtime()
+            with open(args.input, "rb") as fh:
+                data = fh.read(MAX_INPUT + 1)
+        else:
+            data = read_spool(args.input)
         cfg = load_config(args.config)
-        text = extract_text(args.input, cfg)
-        ticket = parse_t2med(text)
-        log(f"erkannt: {ticket.patient}; {len(ticket.appointments)} Termin(e)")
-
-        if args.extract:
-            print(json.dumps({
-                "patient": ticket.patient,
-                "appointments": [
-                    {"weekday": a.weekday, "date": a.date, "time": a.time, "type": a.kind}
-                    for a in ticket.appointments
-                ],
-            }, ensure_ascii=False, indent=2))
-            return 0
-
+        text = safe_text(extract_text(data, cfg))
+        try:
+            ticket = parse_t2med(text)
+        except ValueError:
+            raise TicketError("Ungültiger Beleg: eine Seite, ein Patient und vollständige Termine erforderlich.") from None
         payload = render(ticket, cfg)
-        maybe_save_debug(args.input, payload, cfg)
-
-        if args.render:
-            Path(args.render).write_bytes(payload)
-            print(args.render)
-            return 0
-
-        send_smb(payload, cfg)
+        if args.check:
+            print("Belegprüfung erfolgreich.")
+        else:
+            send_cups(payload, cfg)
         return 0
-    except Exception as exc:
-        log(f"FEHLER: {exc}")
+    except TicketError as exc:
+        eprint("terminzettel: " + str(exc))
+        return 1
+    except (Exception, KeyboardInterrupt):
+        # Fremde Fehlertexte können Beleginhalte enthalten. Keine Tracebacks oder Rohmeldungen.
+        eprint("terminzettel: Verarbeitung fehlgeschlagen. Bitte Konfiguration und Drucker prüfen.")
         return 1
 
 

@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+*.raw
+*.pdf
+*.ps
+*.xps
+*.tar.gz
+# Historischer Erstcheck bleibt lokal; aktuelle Tests stehen im Projekt.
+/qualitaetscheck/

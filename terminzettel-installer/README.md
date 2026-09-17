@@ -1,17 +1,22 @@
-# T2med-Terminbeleg auf 58-mm-Bondrucker
+# T2med-Terminzettel
 
-Der Dienst stellt über Samba einen virtuellen Drucker **`Terminzettel`** bereit. Ein T2med-Druckjob wird als PDF/PostScript/XPS/Text angenommen, der Patient und alle Termine werden extrahiert, Termine chronologisch sortiert und nach Datum gruppiert. Anschließend wird ein 58-mm-Beleg erzeugt und als RAW-Druckjob über SMB an den in TOML konfigurierten Ziel-Drucker geschickt.
+In T2med **Terminzettel** als Drucker auswählen. Der Dienst druckt einen 58-mm-Bon über die vorhandene lokale CUPS-Warteschlange **TMm10**. Auf Wunsch ergänzt er einen Offline-Kalender-QR für alle Termine.
 
-Standardziel: `//localhost/TMm10`, Ausgabeformat: Epson ESC/POS, PC858, Teilschnitt.
+## Installation auf dem Raspberry Pi
 
-## Installation
+Voraussetzung: Raspberry Pi OS mit Python ab 3.10, Linux-Kernel ab 6.4, systemd und cgroup v2 mit Speichercontroller. Die lokale CUPS-Warteschlange `TMm10` muss bereits funktionieren. Bei älteren Systemen meldet der Installer, was fehlt.
+
+Das gesamte Projektverzeichnis wird benötigt. Darin ausführen:
 
 ```bash
-chmod +x install-terminzettel.sh
 sudo ./install-terminzettel.sh
 ```
 
-Die vorhandene `/etc/samba/smb.conf` wird vor einer Änderung gesichert. Eine bestehende, fremd konfigurierte `[Terminzettel]`-Freigabe wird nicht überschrieben.
+In T2med einen PDF- oder PostScript-fähigen Treiber für die Freigabe `Terminzettel` verwenden. Pro Druckauftrag wird genau **eine Seite für einen Patienten** erwartet. Die lesbare Terminliste bleibt immer auf dem Bon.
+
+Der Installer sichert die Konfiguration, schützt fremde gleichnamige Freigaben und nimmt seine Dateiänderungen zurück, wenn die Umstellung scheitert. Vor der Installation müssen laufende Druckaufträge abgeschlossen sein.
+
+**Die RAM-Umstellung betrifft den lokalen CUPS-Dienst und den Samba-Druckcache insgesamt.** Druckwarteschlangen, Druckhistorie und vorübergehende Druckdaten gehen bei einem Neustart verloren. CUPS-Dateilogs und das normale Samba-Dateilog werden deaktiviert. Vorhandene Drucker bleiben konfiguriert. Ein eigenständiger Samba-Server wird vorausgesetzt; Domänenserver werden abgelehnt.
 
 ## Konfiguration
 
@@ -19,108 +24,80 @@ Die vorhandene `/etc/samba/smb.conf` wird vor einer Änderung gesichert. Eine be
 sudo nano /etc/terminzettel/config.toml
 ```
 
-Kopf und Fuß sind frei konfigurierbar. Beispiel:
-
-```toml
-[header]
-enabled = true
-align = "center"
-bold = true
-text = """
-Praxis Dr. Beispiel
-Allgemeinmedizin
-"""
-
-[footer]
-enabled = true
-align = "center"
-bold = false
-text = """
-Bitte bringen Sie Ihre
-Gesundheitskarte mit.
-"""
-```
-
-Das Ziel bleibt vollständig vom Parser getrennt:
+Änderungen gelten ab dem nächsten Auftrag. Kopf und Fuß lassen sich dort frei einstellen. Standardziel:
 
 ```toml
 [output]
-transport = "smb"
-server = "localhost"
-share = "TMm10"
+queue = "TMm10"
 format = "escpos"
 ```
 
-Für einen anderen RAW-SMB-Drucker werden nur `server`, `share` und ggf. die Ausgabeparameter geändert.
-
-## ESC/POS / Schnitt
+### Kalender-QR
 
 ```toml
-[escpos]
-encoding = "cp858"
-codepage = 19
-font = "A"
-feed_lines = 4
-cut = "partial"   # partial | full | none
+[calendar_qr]
+enabled = true
+summary = "Termin Arztpraxis"
+timezone = "Europe/Berlin"
+default_duration_minutes = 15
+
+include_location = false
+location = ""
+
+caption = "Alle Termine in Kalender übernehmen"
+error_correction = "M"
+quiet_zone_modules = 4
+max_width_dots = 360
+min_module_dots = 3
 ```
 
-Der Renderer sendet bei PC858 `ESC t 19`. Der Schnitt wird genau einmal am Jobende erzeugt; es wird kein zweiter Cut über CUPS o.ä. ausgelöst.
+Für die Praxisadresse beispielsweise `include_location = true` und `location = "Praxis Beispiel, Musterstraße 1, 12345 Musterstadt"` setzen. Titel und Adresse sind feste Praxisangaben; dort keine Patienteninformationen eintragen. Es gibt keine Platzhalter für Name, Behandlungsgrund oder Termintyp.
 
-## Test ohne Drucken
+Der eine QR enthält einen vollständigen Kalender mit einem Eintrag pro Termin. Beginn und Ende werden mit der eingestellten Zeitzone nach UTC umgerechnet. Die Standarddauer beträgt 15 Minuten. Der Kalendergenerator unterstützt zusätzlich eine ausdrücklich angegebene Endzeit; der gegenwärtige T2med-Parser liefert nur Anfangszeiten. Mehrdeutige oder nicht existierende Zeiten bei der Zeitumstellung werden vom Kalendergenerator nicht geraten.
 
-Parser prüfen:
+Der QR benötigt weder URL noch Internet oder Kalenderdienst. Patientenname und Termintyp werden nicht an das Kalendermodul übergeben. Der QR wird im RAM erzeugt und als Schwarzweiß-Raster gedruckt. Die Adresse erscheint nur bei aktivierter Option im Kalendereintrag. Jede Neuausgabe erhält neue zufällige IDs; erneutes Scannen desselben Bons liest dieselben IDs.
+
+**Zu viele Termine oder lange Adressen können die lesbare QR-Größe überschreiten.** Dann wird der Bon ohne QR gedruckt. Ebenso bei einem QR-Fehler. Es erscheinen nur feste technische Fehlermeldungen, keine QR-Inhalte. Die Rasterbreite darf höchstens 384 Punkte betragen; mindestens drei Punkte pro Modul und vier freie Randmodule werden erzwungen. Im Ausgabeformat `text` gibt es keinen QR.
+
+Im automatisierten Test passen ein bis drei Termine mit dem Standardtitel in 360 Punkte. Fünf Termine ohne Adresse benötigen 363 Punkte und passen erst mit `max_width_dots = 384`. Diese breitere Einstellung vorher am Drucker prüfen; eine Adresse vergrößert den QR zusätzlich.
+
+Ein korrekt lesbarer Kalender-QR garantiert noch keinen Kalenderimport durch jede Smartphone-Kamera. Vor dem Praxiseinsatz auf dem TM-m10 mit iPhone und Android prüfen: Erkennung, Import aller Einträge, Uhrzeit und erneutes Scannen. Dieser Gerätetest ist noch offen.
+
+## Patientendaten
+
+Es gibt keine Archivierung, keine Debug-Kopien und keinen Export von Belegen oder QR-Payloads. Das Programm protokolliert keine Patientennamen, Termine oder fremden Fehlertexte.
+
+Samba-Spooldateien werden beim Übernehmen entfernt. Konvertierungen und CUPS-Zwischendaten liegen auf einem begrenzten RAM-Dateisystem ohne Swap. Die Druckprozesse dürfen ebenfalls keinen Swap verwenden; ohne diesen Schutz wird der Auftrag abgelehnt. PDF wird direkt per Pipe verarbeitet. PostScript und XPS benötigen kurzzeitig Dateien im geschützten RAM-Verzeichnis.
+
+CUPS bekommt nur den festen Auftragsnamen `Terminzettel`. Der Auftrag wird nach Beendigung entfernt, bei Fehlern oder nach 60 Sekunden abgebrochen. Ein Bereinigungsdienst entfernt verwaiste Aufträge und Dateien; bei einem Absturz können Daten bis zum nächsten Bereinigungslauf kurzzeitig im RAM verbleiben. Nach einem Neustart sind sie weg. Ein fehlgeschlagener Auftrag wird aus T2med neu gedruckt.
+
+Die Überwachung bestätigt den CUPS-Auftrag, nicht den tatsächlichen Papierauswurf. Bei ausgeschalteter Druckhistorie kann ein bereits entfernter Auftrag nachträglich nicht mehr nach Erfolg oder Abbruch unterschieden werden.
+
+Der Dienst kontrolliert den Raspberry Pi. Bereits vorhandene Altdateien sowie Aufbewahrung auf dem T2med-Client oder im Drucker werden dadurch nicht rückwirkend geändert. Suspend/Hibernation und zusätzliche systemweite Audit-/Backup-Konfigurationen müssen zur Vorgabe passen. Die Installationssicherung enthält ausschließlich Programm- und Konfigurationsdateien und ist nur für root zugänglich.
+
+## Prüfen und entfernen
+
+Selbsttest ohne echte Patientendaten oder Druck:
 
 ```bash
-terminzettel-submit --extract /pfad/zum/t2med-termin.pdf
+terminzettel-submit --self-test
 ```
 
-ESC/POS-Datei erzeugen, aber nicht senden:
-
-```bash
-terminzettel-submit --render /tmp/terminzettel.raw /pfad/zum/t2med-termin.pdf
-xxd /tmp/terminzettel.raw | head
-```
-
-Echten Testdruck auslösen:
-
-```bash
-terminzettel-submit /pfad/zum/t2med-termin.pdf
-```
-
-## Samba-Eingang
-
-Der Installer ergänzt folgenden Drucker zwischen markierten Kommentarzeilen in `/etc/samba/smb.conf`:
-
-```ini
-[Terminzettel]
-    comment = T2med Terminbeleg 58mm
-    path = /var/spool/samba/terminzettel
-    printable = yes
-    browseable = yes
-    guest ok = yes
-    read only = yes
-    use client driver = yes
-    printing = bsd
-    print command = /usr/local/sbin/terminzettel-submit %s
-    lpq command =
-    lprm command =
-```
-
-Samba übergibt die Spooldatei synchron an den Filter. Der Filter verändert die vorhandene `TMm10`-Freigabe nicht.
-
-## Unterstützte Eingangsformate
-
-- PDF: direkt mit `pdftotext -layout`
-- PostScript: Ghostscript -> PDF -> `pdftotext`
-- XPS: `gxps2pdf` -> PDF -> `pdftotext`
-- Text: direkt
-
-Wenn ein Windows-Client PCL/anderen Binärdatenstrom liefert, sollte dort ein PostScript- oder PDF-fähiger Treiber für den virtuellen Drucker verwendet werden. Der Filter bricht bei nicht erkennbaren T2med-Terminen ab, statt unverständliche Daten an den Bondrucker zu schicken.
-
-## Deinstallation
+Deinstallation aus demselben Projektverzeichnis:
 
 ```bash
 sudo ./install-terminzettel.sh --uninstall
 ```
 
-Die Deinstallation entfernt Programm, Konfiguration und den vom Installer markierten Samba-Block. Paketabhängigkeiten werden bewusst nicht automatisch entfernt.
+Nachträglich veränderte Dateien werden nicht überschrieben. Die Konfiguration wird vor dem Entfernen überprüft; bei Konflikten bricht die Deinstallation ab. Dienstbenutzer, Pakete und Installationssicherung bleiben erhalten.
+
+## Entwicklung
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -B -m unittest discover -s tests -v
+bash -n install-terminzettel.sh
+```
+
+Die Tests verwenden ausschließlich künstliche Namen und Termine. Der QR wird zusätzlich mit einem unabhängigen Decoder zurückgelesen und bytegenau verglichen. Produktionsabhängigkeiten werden durch den Installer als Debian-Pakete installiert; `zxing-cpp` und `icalendar` werden ausschließlich für Entwicklungstests benötigt.
