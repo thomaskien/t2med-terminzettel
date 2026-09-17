@@ -1,0 +1,67 @@
+# /etc/terminzettel/config.toml
+# T2med-Terminbeleg -> 58-mm-Terminbon -> SMB RAW-Drucker
+
+[input]
+# Wird nur für bereits als Text angelieferte Jobs benötigt.
+text_encoding = "utf-8"
+
+[output]
+transport = "smb"
+server = "localhost"
+share = "TMm10"
+
+# escpos = Epson/ESC-POS inklusive Steuerzeichen und Schnitt
+# text   = reiner Text ohne ESC/POS-Steuerzeichen
+format = "escpos"
+
+# Leer = Gastzugriff / -N. Falls Authentifizierung nötig ist, hier eintragen.
+username = ""
+password = ""
+domain = ""
+
+# Nur bei output.format = "text"
+text_encoding = "utf-8"
+
+[escpos]
+# Epson PC858: Umlaute + Euro. ESC t 19 wird vor dem Text gesendet.
+encoding = "cp858"
+codepage = 19
+font = "A"
+initialize = true
+
+# Papier nach dem Inhalt noch etwas vorschieben.
+feed_lines = 4
+
+# partial | full | none
+cut = "partial"
+
+# Ersatzzeichen für Zeichen, die in der gewählten Codepage fehlen.
+unencodable = "?"
+
+[layout]
+# TM-m10, 58 mm, Font A: sinnvoller Ausgangswert.
+columns = 35
+heading = "IHRE TERMINE"
+heading_double_height = true
+show_patient = true
+footer_separator = true
+separator_char = "-"
+
+[header]
+enabled = true
+align = "center"
+bold = true
+text = """
+"""
+
+[footer]
+enabled = true
+align = "center"
+bold = false
+text = """
+"""
+
+[debug]
+# Aus Datenschutzgründen standardmäßig leer: nichts dauerhaft speichern.
+save_raw_dir = ""
+save_input_dir = ""
