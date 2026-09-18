@@ -4,13 +4,44 @@ In T2med **Terminzettel** als Drucker auswählen. Der Dienst druckt einen 58-mm-
 
 ## Installation auf dem Raspberry Pi
 
-Voraussetzung: Raspberry Pi OS mit Python ab 3.10, Linux-Kernel ab 6.4, systemd und cgroup v2 mit Speichercontroller. Die lokale CUPS-Warteschlange `TMm10` muss bereits funktionieren. Bei älteren Systemen meldet der Installer, was fehlt.
+Voraussetzung: Raspberry Pi OS mit Python ab 3.10, systemd und eine funktionierende lokale CUPS-Warteschlange `TMm10`. Bei älteren Systemen meldet der Installer, was fehlt.
 
-Das gesamte Projektverzeichnis wird benötigt. Darin ausführen:
+### Download und Installation
+
+[Projekt als Archiv herunterladen](https://github.com/thomaskien/t2med-terminzettel/archive/refs/heads/main.tar.gz). Das gesamte Archiv wird benötigt, nicht nur das Installationsskript.
+
+Direkt auf dem Raspberry Pi herunterladen, entpacken und installieren:
 
 ```bash
+cd ~
+curl -fL https://github.com/thomaskien/t2med-terminzettel/archive/refs/heads/main.tar.gz -o terminzettel.tar.gz
+tar -xzf terminzettel.tar.gz
+cd t2med-terminzettel-main/terminzettel-installer
 sudo ./install-terminzettel.sh
 ```
+
+Falls `curl` fehlt: `sudo apt-get update && sudo apt-get install -y curl`. Die übrigen benötigten Pakete installiert das Skript selbst. Download und Paketinstallation benötigen Internet; der spätere Kalender-QR funktioniert offline. Wer bereits als `root` angemeldet ist, kann `sudo` weglassen.
+
+Ist das Projekt bereits entpackt, im Unterordner `terminzettel-installer` einfach `sudo ./install-terminzettel.sh` ausführen.
+
+### Vorhandene Installation aktualisieren
+
+Bei einem Download als Archiv die Download- und Installationsbefehle oben erneut ausführen. Einstellungen gehören nach `/etc/terminzettel/config.toml`; diese übernimmt der Installer beim Update.
+
+Falls das Projekt mit Git nach `~/terminzettel` heruntergeladen wurde:
+
+```bash
+cd ~/terminzettel
+git pull --ff-only
+cd terminzettel-installer
+sudo ./install-terminzettel.sh
+```
+
+Auch nach dem früheren Abbruch mit „cgroup v2 und Speichercontroller erforderlich“ genügt der aktuelle Download und ein erneuter Installationslauf. Die cgroup-/Swap-Sperre wurde entfernt; dafür ist kein Systemupdate erforderlich.
+
+### Drucker in T2med
+
+Nach der Installation unter Windows die Druckerfreigabe `\\kienzlebox\Terminzettel` verbinden und in T2med als Drucker auswählen. Falls der Raspberry Pi anders heißt, `kienzlebox` entsprechend ersetzen. `TMm10` bleibt die bereits vorhandene lokale CUPS-Ausgabewarteschlange auf dem Raspberry Pi.
 
 In T2med einen PDF- oder PostScript-fähigen Treiber für die Freigabe `Terminzettel` verwenden. Pro Druckauftrag wird genau **eine Seite für einen Patienten** erwartet. Die lesbare Terminliste bleibt immer auf dem Bon.
 
@@ -24,7 +55,25 @@ Der Installer sichert die Konfiguration, schützt fremde gleichnamige Freigaben 
 sudo nano /etc/terminzettel/config.toml
 ```
 
-Änderungen gelten ab dem nächsten Auftrag. Kopf und Fuß lassen sich dort frei einstellen. Standardziel:
+Änderungen gelten ab dem nächsten Auftrag; ein Neustart ist nicht nötig. Die folgenden Abschnitte in der vorhandenen Datei bearbeiten, nicht doppelt anlegen.
+
+Kopf und Fuß beispielsweise:
+
+```toml
+[header]
+enabled = true
+align = "center"
+bold = true
+text = "Praxis Beispiel"
+
+[footer]
+enabled = true
+align = "center"
+bold = false
+text = "Bitte bringen Sie Ihre Versichertenkarte mit."
+```
+
+Mit `enabled = false` lässt sich der jeweilige Block abschalten. Standardziel:
 
 ```toml
 [output]
@@ -67,9 +116,9 @@ Ein korrekt lesbarer Kalender-QR garantiert noch keinen Kalenderimport durch jed
 
 Es gibt keine Archivierung, keine Debug-Kopien und keinen Export von Belegen oder QR-Payloads. Das Programm protokolliert keine Patientennamen, Termine oder fremden Fehlertexte.
 
-Samba-Spooldateien werden beim Übernehmen entfernt. Konvertierungen und CUPS-Zwischendaten liegen auf einem begrenzten RAM-Dateisystem ohne Swap. Die Druckprozesse dürfen ebenfalls keinen Swap verwenden; ohne diesen Schutz wird der Auftrag abgelehnt. PDF wird direkt per Pipe verarbeitet. PostScript und XPS benötigen kurzzeitig Dateien im geschützten RAM-Verzeichnis.
+Samba-Spooldateien werden beim Übernehmen entfernt. Konvertierungen und CUPS-Zwischendaten liegen auf einem begrenzten RAM-Dateisystem. Das tmpfs kann bei aktiviertem Betriebssystem-Swap ausgelagert werden. PDF wird direkt per Pipe verarbeitet. PostScript und XPS benötigen kurzzeitig Dateien im geschützten RAM-Verzeichnis.
 
-CUPS bekommt nur den festen Auftragsnamen `Terminzettel`. Der Auftrag wird nach Beendigung entfernt, bei Fehlern oder nach 60 Sekunden abgebrochen. Ein Bereinigungsdienst entfernt verwaiste Aufträge und Dateien; bei einem Absturz können Daten bis zum nächsten Bereinigungslauf kurzzeitig im RAM verbleiben. Nach einem Neustart sind sie weg. Ein fehlgeschlagener Auftrag wird aus T2med neu gedruckt.
+CUPS bekommt nur den festen Auftragsnamen `Terminzettel`. Der Auftrag wird nach Beendigung entfernt, bei Fehlern oder nach 60 Sekunden abgebrochen. Ein Bereinigungsdienst entfernt verwaiste Aufträge und Dateien; bei einem Absturz können Daten bis zum nächsten Bereinigungslauf kurzzeitig im RAM verbleiben. Nach einem Neustart stehen diese Aufträge nicht mehr zur Verfügung. Ein fehlgeschlagener Auftrag wird aus T2med neu gedruckt.
 
 Die Überwachung bestätigt den CUPS-Auftrag, nicht den tatsächlichen Papierauswurf. Bei ausgeschalteter Druckhistorie kann ein bereits entfernter Auftrag nachträglich nicht mehr nach Erfolg oder Abbruch unterschieden werden.
 
@@ -93,6 +142,8 @@ Nachträglich veränderte Dateien werden nicht überschrieben. Die Konfiguration
 
 ## Entwicklung
 
+Im Unterordner `terminzettel-installer` ausführen:
+
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
@@ -100,4 +151,4 @@ python3 -m venv .venv
 bash -n install-terminzettel.sh
 ```
 
-Die Tests verwenden ausschließlich künstliche Namen und Termine. Der QR wird zusätzlich mit einem unabhängigen Decoder zurückgelesen und bytegenau verglichen. Produktionsabhängigkeiten werden durch den Installer als Debian-Pakete installiert; `zxing-cpp` und `icalendar` werden ausschließlich für Entwicklungstests benötigt.
+Den aktuellen [Teststatus und die offenen Gerätetests](https://github.com/thomaskien/t2med-terminzettel/blob/main/TESTSTATUS.md) separat beachten. Die Tests verwenden ausschließlich künstliche Namen und Termine. Der QR wird zusätzlich mit einem unabhängigen Decoder zurückgelesen und bytegenau verglichen. Produktionsabhängigkeiten werden durch den Installer als Debian-Pakete installiert; `zxing-cpp` und `icalendar` werden ausschließlich für Entwicklungstests benötigt.

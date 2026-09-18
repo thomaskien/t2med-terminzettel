@@ -116,7 +116,7 @@ Before=terminzettel-runtime.service
 What=tmpfs
 Where=/run/terminzettel
 Type=tmpfs
-Options=size=128M,mode=0755,noswap,nosuid,nodev,noexec
+Options=size=128M,mode=0755,nosuid,nodev,noexec
 
 [Install]
 WantedBy=multi-user.target
@@ -143,7 +143,6 @@ Requires=terminzettel-runtime.service
 After=terminzettel-runtime.service
 
 [Service]
-MemorySwapMax=0
 LimitCORE=0
 """
 
@@ -156,7 +155,6 @@ After=terminzettel-runtime.service cups.service
 Type=oneshot
 User=terminzettel
 Group=terminzettel
-MemorySwapMax=0
 LimitCORE=0
 ExecStart=/usr/local/sbin/terminzettel-submit --cleanup
 TimeoutStartSec=30

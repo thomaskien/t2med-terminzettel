@@ -59,8 +59,8 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("PreserveJobFiles No", daemon)
         self.assertNotIn("MaxJobTime", daemon)
         self.assertNotIn("MaxHoldTime", daemon)
-        self.assertIn("noswap", cfg.MOUNT)
-        self.assertIn("MemorySwapMax=0", cfg.DROPIN)
+        self.assertNotIn("noswap", cfg.MOUNT)
+        self.assertNotIn("MemorySwapMax", cfg.DROPIN + cfg.CLEANUP_SERVICE)
         self.assertIn("LimitCORE=0", cfg.DROPIN)
 
     def test_plan_reads_actual_source_instead_of_embedded_copy(self):
@@ -72,6 +72,36 @@ class ConfigTests(unittest.TestCase):
                 path.write_text("# initial\n")
             result = cfg.plan(ROOT, root)
         self.assertEqual(result["/usr/local/lib/terminzettel/terminzettel.py"], (ROOT / "terminzettel.py").read_text())
+
+
+class RuntimeSetupTests(unittest.TestCase):
+    def prepare(self, directory, filesystem="tmpfs", mount_result=0):
+        def path(name):
+            self.assertEqual(name, "/run/terminzettel")
+            return Path(directory)
+
+        def run(*args, **kwargs):
+            code = 1 if args[0] == "mountpoint" else mount_result if args[0] == "mount" else 0
+            output = (filesystem + " rw,nosuid,nodev,noexec\n").encode() if args[0] == "findmnt" else b""
+            return subprocess.CompletedProcess(args, code, output, b"")
+
+        with patch.object(installer, "Path", side_effect=path), patch.object(installer, "run", side_effect=run) as commands:
+            installer.prepare_runtime()
+        return commands
+
+    def test_standard_tmpfs_installation_needs_no_cgroup_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands = self.prepare(directory)
+        mount = next(call.args for call in commands.call_args_list if call.args[0] == "mount")
+        self.assertEqual(mount[4], "size=128M,mode=0755,nosuid,nodev,noexec")
+
+    def test_disk_directory_still_rejected(self):
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(RuntimeError, "kein temporäres RAM-Dateisystem"):
+            self.prepare(directory, filesystem="ext4")
+
+    def test_mount_failure_is_reported(self):
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(RuntimeError, "konnte nicht eingehängt"):
+            self.prepare(directory, mount_result=1)
 
 
 class TransactionTests(unittest.TestCase):
@@ -91,7 +121,7 @@ class TransactionTests(unittest.TestCase):
             stack.enter_context(patch.object(installer, "plan", return_value=changes))
             stack.enter_context(patch.object(installer, "snapshot", return_value=None))
             stack.enter_context(patch.object(installer, "run", side_effect=run))
-            for name in ("prepare_runtime", "validate", "check_idle", "atomic_write", "write_file", "verify_swap_limits", "start_previous"):
+            for name in ("prepare_runtime", "validate", "check_idle", "atomic_write", "write_file", "start_previous"):
                 stack.enter_context(patch.object(installer, name))
             stack.enter_context(patch.object(installer.os, "chmod"))
             rollback = stack.enter_context(patch.object(installer, "restore"))

@@ -76,9 +76,6 @@ def start_previous(active):
 
 
 def prepare_runtime():
-    controllers = Path("/sys/fs/cgroup/cgroup.controllers")
-    if not controllers.exists() or "memory" not in controllers.read_text().split():
-        raise RuntimeError("Raspberry Pi OS mit cgroup v2 und Speichercontroller erforderlich; bitte das System aktualisieren.")
     run("getent", "group", "lp")
     if run("getent", "group", "terminzettel", optional=True).returncode:
         run("groupadd", "--system", "terminzettel")
@@ -89,13 +86,13 @@ def prepare_runtime():
     if run("mountpoint", "-q", str(runtime), optional=True).returncode:
         if any(runtime.iterdir()):
             raise RuntimeError("Das RAM-Zielverzeichnis ist nicht leer; keine Dateien werden verdeckt.")
-        result = run("mount", "-t", "tmpfs", "-o", "size=128M,mode=0755,noswap,nosuid,nodev,noexec", "tmpfs", str(runtime), optional=True)
+        result = run("mount", "-t", "tmpfs", "-o", "size=128M,mode=0755,nosuid,nodev,noexec", "tmpfs", str(runtime), optional=True)
         if result.returncode:
-            raise RuntimeError("RAM ohne Swap wird vom Kernel nicht unterstützt (Linux ab 6.4 erforderlich). Bitte Raspberry Pi OS aktualisieren.")
+            raise RuntimeError("Das temporäre RAM-Dateisystem konnte nicht eingehängt werden.")
     # Prüft auch eine bereits vorhandene Einhängung, bevor Daten dorthin gehen.
     mount = run("findmnt", "-n", "-o", "FSTYPE,OPTIONS", "--mountpoint", str(runtime)).stdout.decode().split()
-    if len(mount) != 2 or mount[0] != "tmpfs" or "noswap" not in mount[1].split(","):
-        raise RuntimeError("Das vorhandene Laufzeitverzeichnis ist kein RAM-Dateisystem ohne Swap.")
+    if len(mount) != 2 or mount[0] != "tmpfs":
+        raise RuntimeError("Das vorhandene Laufzeitverzeichnis ist kein temporäres RAM-Dateisystem.")
     for owner, group, mode, names in [
         ("terminzettel", "terminzettel", "0700", ("spool", "work")),
         ("root", "lp", "0710", ("cups",)),
@@ -112,13 +109,6 @@ def validate(changes):
             Path(td, Path(name).name).write_text(changes[name])
         run("testparm", "-s", str(Path(td, "smb.conf")))
         run("cupsd", "-t", "-c", str(Path(td, "cupsd.conf")), "-s", str(Path(td, "cups-files.conf")))
-
-
-def verify_swap_limits():
-    for service in ("smbd.service", "cups.service"):
-        group = run("systemctl", "show", service, "--property=ControlGroup", "--value").stdout.decode().strip()
-        if not group or (Path("/sys/fs/cgroup") / group.lstrip("/") / "memory.swap.max").read_text().strip() != "0":
-            raise RuntimeError("Der Speicherschutz für die Druckdienste ist nicht aktiv.")
 
 
 def write_file(name, text, prior):
@@ -172,7 +162,6 @@ def install():
         run("systemctl", "start", "terminzettel-runtime.service")
         run("systemctl", "restart", "cups.service", "smbd.service")
         start_previous(active)
-        verify_swap_limits()
         run("systemctl", "enable", "--now", "terminzettel-cleanup.timer")
         run("testparm", "-s")
         run("lpstat", "-h", "/run/cups/cups.sock", "-p", queue)

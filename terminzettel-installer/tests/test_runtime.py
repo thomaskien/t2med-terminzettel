@@ -64,7 +64,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("Testperson", out + err)
 
     def test_runtime_failure_still_consumes_spool(self):
-        app.ensure_runtime.side_effect = app.TicketError("RAM-Schutz fehlt.")
+        app.ensure_runtime.side_effect = app.TicketError("RAM-Dateisystem fehlt.")
         self.assertEqual(self.main(str(self.source))[0], 1)
         self.assertFalse(self.source.exists())
 
@@ -174,26 +174,30 @@ class RuntimeTests(unittest.TestCase):
         conn.cancelJob.assert_called_once_with(1, purge_job=True)
 
 
-class ProtectionTests(unittest.TestCase):
-    def runtime(self, mount_type, mount_options, safe_process):
+class RuntimeMountTests(unittest.TestCase):
+    def runtime(self, mount_type, mount_options, directories_exist=True):
         fixture = "24 23 0:23 / /run/terminzettel rw - " + mount_type + " tmpfs " + mount_options + "\n"
-        with patch.object(Path, "read_text", return_value=fixture), patch.object(app, "process_cannot_swap", return_value=safe_process), patch.object(Path, "is_dir", return_value=True), patch.object(app.resource, "setrlimit"):
+
+        def read_text(path):
+            self.assertEqual(path, Path("/proc/self/mountinfo"))
+            return fixture
+
+        with patch.object(Path, "read_text", autospec=True, side_effect=read_text), patch.object(Path, "is_dir", return_value=directories_exist), patch.object(app.resource, "setrlimit"):
             app.ensure_runtime()
 
     def test_disk_spool_is_rejected(self):
         with self.assertRaises(app.TicketError):
-            self.runtime("ext4", "rw", True)
+            self.runtime("ext4", "rw")
 
-    def test_swappable_tmpfs_is_rejected(self):
+    def test_standard_tmpfs_works_without_cgroup_or_swap_checks(self):
+        self.runtime("tmpfs", "rw")
+
+    def test_missing_runtime_directories_are_rejected(self):
         with self.assertRaises(app.TicketError):
-            self.runtime("tmpfs", "rw", True)
+            self.runtime("tmpfs", "rw", directories_exist=False)
 
-    def test_swappable_process_is_rejected(self):
-        with self.assertRaises(app.TicketError):
-            self.runtime("tmpfs", "rw,noswap", False)
-
-    def test_protected_runtime_is_accepted(self):
-        self.runtime("tmpfs", "rw,noswap", True)
+    def test_existing_noswap_mount_remains_compatible(self):
+        self.runtime("tmpfs", "rw,noswap")
 
 
 class CupsTests(unittest.TestCase):

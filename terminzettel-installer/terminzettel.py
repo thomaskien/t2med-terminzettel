@@ -44,20 +44,6 @@ def safe_text(text: str) -> str:
     return text
 
 
-def process_cannot_swap() -> bool:
-    if len(Path("/proc/swaps").read_text().splitlines()) <= 1:
-        return True
-    for line in Path("/proc/self/cgroup").read_text().splitlines():
-        if line.startswith("0::"):
-            group = Path("/sys/fs/cgroup") / line[3:].lstrip("/")
-            while group != Path("/sys/fs/cgroup"):
-                limit = group / "memory.swap.max"
-                if limit.is_file() and limit.read_text().strip() == "0":
-                    return True
-                group = group.parent
-    return False
-
-
 def ensure_runtime() -> None:
     """Kein stiller Rückfall auf ein Verzeichnis auf der SD-Karte."""
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -67,13 +53,13 @@ def ensure_runtime() -> None:
             before, after = line.split(" - ", 1)
             fields, fs = before.split(), after.split()
             if fields[4] == str(RUNTIME):
-                mounted = fs[0] == "tmpfs" and "noswap" in fs[2].split(",")
-        if not mounted or not process_cannot_swap():
-            raise TicketError("RAM-Schutz fehlt. Bitte den Installer erneut ausführen.")
+                mounted = fs[0] == "tmpfs"
+        if not mounted:
+            raise TicketError("RAM-Dateisystem fehlt. Bitte den Installer erneut ausführen.")
         if not WORK.is_dir() or not SPOOL.is_dir():
             raise TicketError("RAM-Verzeichnisse fehlen. Bitte den Installer erneut ausführen.")
     except OSError:
-        raise TicketError("RAM-Schutz konnte nicht geprüft werden.") from None
+        raise TicketError("RAM-Dateisystem konnte nicht geprüft werden.") from None
 
 
 WEEKDAYS = {
