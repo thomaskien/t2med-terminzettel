@@ -1,4 +1,5 @@
 from pathlib import Path
+import gzip
 import shutil
 import subprocess
 import tempfile
@@ -59,6 +60,19 @@ class ConversionTests(unittest.TestCase):
             ticket = app.parse_t2med(app.extract_text(postscript_fixture(), {}))
             self.assertEqual(len(ticket.appointments), 1)
             self.assertEqual(list(Path(directory).iterdir()), [])
+
+    @unittest.skipUnless(shutil.which("gs") and shutil.which("pdftotext"), "Ghostscript/Poppler fehlen")
+    def test_mac_generic_postscript(self):
+        try:
+            subprocess.run(["gs", "--version"], check=True, capture_output=True)
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest("Lokales Ghostscript nicht ausführbar")
+        source = gzip.decompress((Path(__file__).parent / "fixtures/mac-generic-postscript.ps.gz").read_bytes())
+        with tempfile.TemporaryDirectory() as directory, patch.object(app, "WORK", Path(directory)):
+            ticket = app.parse_t2med(app.extract_text(source, {}))
+            self.assertEqual(ticket.patient, "Testperson Alpha")
+            self.assertEqual(len(ticket.appointments), 1)
+            self.assertEqual(ticket.appointments[0].date, "17.09.2026")
 
 
 if __name__ == "__main__":
