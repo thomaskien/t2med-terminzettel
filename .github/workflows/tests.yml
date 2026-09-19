@@ -32,4 +32,17 @@ jobs:
       - name: Install CUPS, Samba and conversion tools
         run: sudo apt-get update && sudo apt-get install -y cups samba python3-cups python3-tomli python3-qrcode python3-pil tzdata poppler-utils ghostscript libgxps-utils avahi-daemon avahi-utils
       - name: Real CUPS and Bonjour with a synthetic printer
-        run: sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS bash terminzettel-installer/tests/cups_smoke.sh
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/cups-smoke.log"
+          if ! sudo --preserve-env=GITHUB_ACTIONS,RUNNER_OS bash terminzettel-installer/tests/cups_smoke.sh 2>&1 | tee "$log"; then
+            # Synthetic fixtures only; expose the failure without requiring a GitHub login.
+            python3 - "$log" <<'PY'
+          from pathlib import Path
+          import sys
+          message = '\n'.join(Path(sys.argv[1]).read_text().splitlines()[-45:])
+          message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error title=CUPS integration failed::' + message)
+          PY
+            exit 1
+          fi

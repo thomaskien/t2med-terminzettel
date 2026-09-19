@@ -6,6 +6,21 @@ if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_OS:-}" != Linux || $EUID -ne 0 
   exit 1
 fi
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+run_installer() {
+  python3 -B - "$SOURCE_DIR" "$@" <<'PY'
+import sys
+sys.path.insert(0, sys.argv.pop(1))
+import install
+original_run = install.subprocess.run
+def trace_run(*args, **kwargs):
+    result = original_run(*args, **kwargs)
+    if result.returncode and result.stderr:
+        print(result.stderr.decode(errors='replace'), file=sys.stderr, flush=True)
+    return result
+install.subprocess.run = trace_run
+install.main()
+PY
+}
 systemctl start cups.service smbd.service avahi-daemon.service
 cupsctl --share-printers
 cat > /usr/lib/cups/backend/terminzettel-test <<'BACKEND'
@@ -20,8 +35,8 @@ else:
 BACKEND
 chmod 0700 /usr/lib/cups/backend/terminzettel-test
 lpadmin -p TMm10 -E -v terminzettel-test:/ -m raw
-python3 -B "$SOURCE_DIR/install.py"
-python3 -B "$SOURCE_DIR/install.py"
+run_installer
+run_installer
 cupstestppd "$SOURCE_DIR/terminzettel.ppd"
 python3 -B - "$SOURCE_DIR" <<'PY'
 from pathlib import Path
@@ -54,7 +69,7 @@ assert b'Terminzettel' in listing, 'Bonjour advertisement missing'
 assert Path('/run/terminzettel/samba-cache').stat().st_mode & 0o777 == 0o755
 print('PDF -> CUPS -> Terminzettel -> ESC/POS + QR -> TMm10: OK; Bonjour: OK')
 PY
-python3 -B "$SOURCE_DIR/install.py" --uninstall
+run_installer --uninstall
 python3 -B - <<'PY'
 import cups
 conn = cups.Connection(host='/run/cups/cups.sock')
