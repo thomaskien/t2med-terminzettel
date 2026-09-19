@@ -1,10 +1,10 @@
 # Teststatus
 
-Stand: 18. September 2026. Die Software ist für den Gerätetest vorbereitet; eine Produktivfreigabe am Raspberry Pi und Drucker steht noch aus. Alle Testdaten sind künstlich.
+Stand: 19. September 2026. Die Software ist für den Gerätetest vorbereitet; eine Produktivfreigabe am Raspberry Pi und Drucker steht noch aus. Alle Testdaten sind künstlich.
 
 ## Automatisiert geprüft
 
-- 86 Tests lokal unter Python 3.14 nach Entfernung der cgroup-/Swap-Sperre: 85 bestanden, ein PostScript-Integrationstest übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
+- 96 Tests lokal unter Python 3.14 mit CUPS-Eingang und ohne cgroup-/Swap-Sperre: 95 bestanden, ein PostScript-Integrationstest übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
 - Echte PDF-Textextraktion mit Poppler; PostScript-Fehlerbehandlung und Aufräumen separat getestet.
 - Einseitige T2med-Erkennung, mehrzeilige Beschreibungen, Sortierung, Duplikate und Ablehnung beschädigter Terminzeilen.
 - Flüchtige Dateiverarbeitung, Löschung übernommener Eingaben auch im Fehlerfall, feste Fehlermeldungen ohne Beleginhalte sowie CUPS-Auftragsablauf mit simuliertem Server.
@@ -13,6 +13,8 @@ Stand: 18. September 2026. Die Software ist für den Gerätetest vorbereitet; ei
 - QR aus dem ESC/POS-Raster mit `zxing-cpp` zurückgelesen und bytegenau mit dem Kalender verglichen. Ein QR-Fehler lässt den lesbaren Bon unverändert.
 - Python-3.10-Syntax aller Programmmodule und 16 Parser-Tests mit einem echten Python-3.10-Interpreter geprüft.
 - Shell-Syntax, CLI-Selbsttest und Git-Diff auf Formatfehler geprüft.
+
+Ein zusätzlicher Linux-Integrationstest prüft Installation, Update, PDF-Eingang über CUPS, fertigen ESC/POS-Bon mit QR, Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Der aktuelle Erfolg dieses Tests ist unter Actions sichtbar. Die PPD wurde lokal mit `cupstestppd` geprüft.
 
 Die GitHub-Actions-Konfiguration führt die Suite unter Python 3.10 und 3.13 mit Poppler und Ghostscript aus. Ihr aktueller Ausführungsstatus ist im Repository unter **Actions** sichtbar.
 
@@ -33,7 +35,7 @@ Ein langer Adresszusatz kann auch bei 384 Punkten zu groß werden. Die Software 
 ## Noch am Gerät prüfen
 
 1. Installation auf dem vorgesehenen Raspberry Pi OS, Neustart und lokaler CUPS-Zugriff auf `TMm10`; temporäres RAM-Dateisystem und tatsächliche Dienstberechtigungen.
-2. Echter T2med-Auftrag über Samba: PDF und gegebenenfalls PostScript/XPS, Umlaute, Layout und Schnitt. XPS wurde lokal nicht mit einem echten Konverter geprüft.
+2. Bonjour-Drucker auf dem Mac unter „Default“ hinzufügen. Echter T2med-Auftrag über IPP und gegebenenfalls Samba: PDF und gegebenenfalls PostScript/XPS, Umlaute, Layout und Schnitt. XPS wurde lokal nicht mit einem echten Konverter geprüft.
 3. Drucker ausgeschaltet, Papier leer und abgebrochener Auftrag: Verhalten von CUPS und anschließende Bereinigung kontrollieren.
 4. Gedruckte Bons mit einem, zwei, drei und fünf Terminen: QR-Erkennung auf iPhone und Android, Import **aller** Kalendereinträge, richtige Uhrzeiten und erneutes Scannen. Für fünf Termine zusätzlich die Einstellung 384 Punkte testen.
 5. Optionaler Praxisadresszusatz und eine Kalender-App ohne Internetverbindung.

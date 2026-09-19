@@ -135,7 +135,7 @@ ExecStart=/usr/bin/install -d -o terminzettel -g terminzettel -m 0700 /run/termi
 ExecStart=/usr/bin/install -d -o root -g lp -m 0710 /run/terminzettel/cups
 ExecStart=/usr/bin/install -d -o root -g lp -m 1770 /run/terminzettel/cups/tmp
 ExecStart=/usr/bin/install -d -o lp -g lp -m 0700 /run/terminzettel/cups-cache
-ExecStart=/usr/bin/install -d -o root -g root -m 0700 /run/terminzettel/samba-cache
+ExecStart=/usr/bin/install -d -o root -g root -m 0755 /run/terminzettel/samba-cache
 """
 
 DROPIN = """[Unit]
@@ -177,6 +177,10 @@ ulimit -c 0
 exec /usr/bin/python3 -B /usr/local/lib/terminzettel/terminzettel.py "$@"
 """
 
+BACKEND = """#!/bin/sh
+exec /usr/bin/python3 -B /usr/local/lib/terminzettel/cups_backend.py "$@"
+"""
+
 
 def plan(source: Path, root: Path = Path("/")) -> dict[str, str]:
     def read(path):
@@ -191,6 +195,9 @@ def plan(source: Path, root: Path = Path("/")) -> dict[str, str]:
         "/usr/local/lib/terminzettel/terminzettel.py": (source / "terminzettel.py").read_text(),
         "/usr/local/lib/terminzettel/calendar_qr.py": (source / "calendar_qr.py").read_text(),
         "/usr/local/lib/terminzettel/escpos.py": (source / "escpos.py").read_text(),
+        "/usr/local/lib/terminzettel/cups_backend.py": (source / "cups_backend.py").read_text(),
+        "/usr/local/share/terminzettel/terminzettel.ppd": (source / "terminzettel.ppd").read_text(),
+        "/usr/lib/cups/backend/terminzettel": BACKEND,
         "/usr/local/sbin/terminzettel-submit": WRAPPER,
         "/usr/local/share/doc/terminzettel/README.md": (source / "README.md").read_text(),
         "/etc/systemd/system/run-terminzettel.mount": MOUNT,

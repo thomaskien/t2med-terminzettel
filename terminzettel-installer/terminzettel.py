@@ -499,13 +499,22 @@ def render(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
     raise ValueError(f"Unbekanntes output.format: {fmt}")
 
 
+def make_payload(data: bytes, cfg: dict[str, Any]) -> bytes:
+    text = safe_text(extract_text(data, cfg))
+    try:
+        ticket = parse_t2med(text)
+    except ValueError:
+        raise TicketError("Ungültiger Beleg: eine Seite, ein Patient und vollständige Termine erforderlich.") from None
+    return render(ticket, cfg)
+
+
 def cups_connection():
     import cups
     cups.setUser("terminzettel")
     return cups, cups.Connection(host=CUPS_SOCKET)
 
 
-def send_cups(payload: bytes, cfg: dict[str, Any]) -> None:
+def send_cups(payload: bytes, cfg: dict[str, Any], *, copies: int = 1) -> None:
     queue = str(cfg.get("output", {}).get("queue", "TMm10"))
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", queue) or queue.casefold() == "terminzettel":
         raise TicketError("Ungültige Zielwarteschlange.")
@@ -513,7 +522,12 @@ def send_cups(payload: bytes, cfg: dict[str, Any]) -> None:
     job = None
     try:
         # Weder Name noch Dateiname des Patienten gehen in die Druckauftrags-Metadaten.
-        job = conn.createJob(queue, "Terminzettel", {"job-cancel-after": str(JOB_TIMEOUT)})
+        options = {"job-cancel-after": str(JOB_TIMEOUT)}
+        if copies != 1:
+            if type(copies) is not int or not 1 <= copies <= 99:
+                raise TicketError("Ungültige Anzahl Druckexemplare.")
+            options["copies"] = str(copies)
+        job = conn.createJob(queue, "Terminzettel", options)
         if conn.startDocument(queue, job, "Terminzettel", "application/vnd.cups-raw", 1) != 100:
             raise TicketError("CUPS hat den Druckauftrag abgelehnt.")
         if conn.writeRequestData(payload, len(payload)) != 100:
@@ -598,12 +612,7 @@ def main() -> int:
         else:
             data = read_spool(args.input)
         cfg = load_config(args.config)
-        text = safe_text(extract_text(data, cfg))
-        try:
-            ticket = parse_t2med(text)
-        except ValueError:
-            raise TicketError("Ungültiger Beleg: eine Seite, ein Patient und vollständige Termine erforderlich.") from None
-        payload = render(ticket, cfg)
+        payload = make_payload(data, cfg)
         if args.check:
             print("Belegprüfung erfolgreich.")
         else:

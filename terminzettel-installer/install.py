@@ -13,6 +13,7 @@ import sys
 import tempfile
 
 from setup_config import plan, remove_block, tomllib
+import cups_queue
 
 SOURCE = Path(__file__).resolve().parent
 STATE = Path("/var/lib/terminzettel/install-state.json")
@@ -98,7 +99,7 @@ def prepare_runtime():
         ("root", "lp", "0710", ("cups",)),
         ("root", "lp", "1770", ("cups/tmp",)),
         ("lp", "lp", "0700", ("cups-cache",)),
-        ("root", "root", "0700", ("samba-cache",)),
+        ("root", "root", "0755", ("samba-cache",)),
     ]:
         run("install", "-d", "-o", owner, "-g", group, "-m", mode, *(str(runtime / name) for name in names))
 
@@ -120,6 +121,8 @@ def write_file(name, text, prior):
         os.chmod(Path(name).parent, 0o750)
     if name.endswith("/terminzettel-submit"):
         mode = 0o755
+    if name == "/usr/lib/cups/backend/terminzettel":
+        mode = 0o700  # CUPS öffnet die Eingabe als root; das Backend gibt die Rechte sofort ab.
     atomic_write(Path(name), text.encode(), mode, 0, gid)
 
 
@@ -132,6 +135,7 @@ def install():
     run("lpstat", "-h", "/run/cups/cups.sock", "-p", queue)
     check_idle()
     previous = json.loads(STATE.read_text()) if STATE.exists() else {"originals": {}}
+    virtual_before = cups_queue.inspect_queue(previous.get("cups_queue", False))
     before = {name: snapshot(Path(name)) for name in changes}
     originals = dict(previous["originals"])
     for name, saved in before.items():
@@ -141,7 +145,7 @@ def install():
             # Fremde zwischenzeitliche Änderungen bleiben auch bei Deinstallation erhalten.
             clean = remove_block(base64.b64decode(saved["data"]).decode())
             originals[name] = dict(saved, data=base64.b64encode(clean.encode()).decode())
-        if "/etc/systemd/" in name and name not in previous["originals"] and saved is not None:
+        if ("/etc/systemd/" in name or name == "/usr/lib/cups/backend/terminzettel") and name not in previous["originals"] and saved is not None:
             raise RuntimeError("Eine fremde Terminzettel-Systemdatei existiert bereits; keine Änderung.")
     prepare_runtime()
     validate(changes)
@@ -150,6 +154,7 @@ def install():
     STATE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(STATE.parent, 0o700)
     atomic_write(STATE.with_name("last-backup.json"), json.dumps(before).encode(), 0o600, 0, 0)
+    added_queue = False
     try:
         run("systemctl", "stop", "smbd.service")
         check_idle()
@@ -162,12 +167,19 @@ def install():
         run("systemctl", "start", "terminzettel-runtime.service")
         run("systemctl", "restart", "cups.service", "smbd.service")
         start_previous(active)
+        if virtual_before is None:
+            added_queue = True  # Auch eine teilweise angelegte Warteschlange zurücknehmen.
+            cups_queue.create_queue(run)
+        cups_queue.verify_queue()
         run("systemctl", "enable", "--now", "terminzettel-cleanup.timer")
         run("testparm", "-s")
         run("lpstat", "-h", "/run/cups/cups.sock", "-p", queue)
-        state = {"originals": originals, "installed": {name: hashlib.sha256(text.encode()).hexdigest() for name, text in changes.items()}}
+        state = {"originals": originals, "cups_queue": True,
+                 "installed": {name: hashlib.sha256(text.encode()).hexdigest() for name, text in changes.items()}}
         atomic_write(STATE, json.dumps(state).encode(), 0o600, 0, 0)
     except BaseException:
+        if added_queue:
+            cups_queue.delete_queue(run, optional=True)
         for service in SERVICES:
             run("systemctl", "stop", service, optional=True)
         if not timer_enabled:
@@ -175,7 +187,8 @@ def install():
         restore(before)
         start_previous(active)
         raise
-    print("Installation abgeschlossen. In T2med den Drucker Terminzettel auswählen.")
+    print("Installation abgeschlossen. CUPS-/Bonjour-Drucker Terminzettel ist freigegeben.")
+    print("Am Mac unter Drucker hinzufügen > Default den Terminzettel auswählen.")
     print("Kopf und Fuß: /etc/terminzettel/config.toml")
     print("CUPS und Samba verwenden jetzt RAM-Zwischenspeicher auf diesem Rechner.")
 
@@ -188,12 +201,17 @@ def uninstall():
         path = Path(name)
         if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != checksum:
             raise RuntimeError("Installierte Dateien wurden nachträglich geändert. Bitte vor Deinstallation prüfen; es wird nichts überschrieben.")
+    virtual_before = cups_queue.inspect_queue(state.get("cups_queue", False))
     check_idle()
     active = {service for service in SERVICES if run("systemctl", "is-active", "--quiet", service, optional=True).returncode == 0}
     before = {name: snapshot(Path(name)) for name in state["installed"]}
+    removed_queue = False
     try:
         run("systemctl", "stop", "smbd.service")
         check_idle()
+        if virtual_before is not None:
+            removed_queue = True
+            cups_queue.delete_queue(run)
         for service in SERVICES[1:]:
             if service == "cups.service" or service in active:
                 run("systemctl", "stop", service)
@@ -205,6 +223,8 @@ def uninstall():
     except BaseException:
         restore(before)
         start_previous(active)
+        if removed_queue:
+            cups_queue.restore_queue(run, virtual_before)
         run("systemctl", "enable", "--now", "terminzettel-cleanup.timer", optional=True)
         raise
     STATE.unlink()

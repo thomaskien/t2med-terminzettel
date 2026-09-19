@@ -29,6 +29,6 @@ if [[ "${1:-}" != "--uninstall" ]]; then
   echo "Druckaufträge und Druckhistorie bleiben nach einem Neustart nicht erhalten."
   export DEBIAN_FRONTEND=noninteractive
   apt-get update
-  apt-get install -y python3-tomli python3-cups python3-qrcode python3-pil tzdata samba cups-client poppler-utils ghostscript libgxps-utils
+  apt-get install -y python3-tomli python3-cups python3-qrcode python3-pil tzdata samba cups-client avahi-daemon poppler-utils ghostscript libgxps-utils
 fi
 exec /usr/bin/python3 -B "$SOURCE_DIR/install.py" "$@"

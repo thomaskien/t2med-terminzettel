@@ -39,7 +39,34 @@ sudo ./install-terminzettel.sh
 
 Auch nach dem früheren Abbruch mit „cgroup v2 und Speichercontroller erforderlich“ genügt der aktuelle Download und ein erneuter Installationslauf. Die cgroup-/Swap-Sperre wurde entfernt; dafür ist kein Systemupdate erforderlich.
 
-### Drucker in T2med
+### Drucker auf dem Mac hinzufügen
+
+Der Installer richtet **Terminzettel** als freigegebene CUPS-Warteschlange ein. Damit wird er über die vorhandene Bonjour-Druckerfreigabe der kienzlebox angekündigt, genauso wie `TMm10` und die Faxdrucker.
+
+1. **Systemeinstellungen → Drucker & Scanner → Drucker hinzufügen** öffnen.
+2. Unter **Default / Standard** den Eintrag **Terminzettel @ kienzlebox** auswählen (der angezeigte Rechnername kann abweichen).
+3. Die angebotene **T2med Terminzettel**-Software verwenden. Falls sie nicht automatisch gewählt wird, **Generic PostScript Printer** auswählen und hinzufügen.
+4. In T2med diesen Drucker **Terminzettel** für das Terminblatt auswählen.
+
+`Terminzettel` erzeugt den Bon einschließlich Kalender-QR und druckt ihn anschließend über die vorhandene Warteschlange `TMm10`. Als Eingangsformat bleibt die normale Seite des Terminblatts eingestellt, zum Beispiel A4. Das Bonformat entsteht erst auf dem Raspberry Pi.
+
+**Falls der Eintrag nicht automatisch erscheint:** Im Dialog **IP** wählen, Adresse `kienzlebox.local` (alternativ die IP-Adresse), Protokoll **Internet Printing Protocol – IPP**, Warteliste **printers/Terminzettel**, Name **Terminzettel**, Verwenden **Generic PostScript Printer**. Der vollständige Anschluss lautet `ipp://kienzlebox.local:631/printers/Terminzettel`.
+
+Voraussetzung ist die bereits eingerichtete CUPS-Netzwerkfreigabe auf dem Raspberry Pi. Sind andere CUPS-Drucker wie `TMm10` bereits als Bonjour-Drucker sichtbar, ist sie vorhanden. Der Installer ergänzt die neue Warteschlange und installiert Avahi für Bonjour. Er verändert weder die Netzwerkzugriffsregeln noch die Anschlussadressen der bestehenden Drucker. Hintergrund: [CUPS-Druckerfreigabe und Bonjour](https://www.cups.org/doc/sharing.html).
+
+Ältere Versionen dieses Projekts hatten nur eine Samba-Freigabe. Für Bonjour das Projekt aktualisieren und den Installer erneut ausführen. Nur den Samba-Cache mit `chmod` zu korrigieren legt noch keinen Bonjour-Drucker an.
+
+### Samba-Warnung zum Cacheverzeichnis beheben
+
+Meldet `testparm` bei einer älteren Installation „cache directory ... should have permissions 0755 for browsing to work“, auf der kienzlebox ausführen:
+
+```bash
+sudo chmod 0755 /run/terminzettel/samba-cache
+```
+
+Danach den Druckerdialog auf dem Mac neu öffnen. Der aktuelle Installer setzt die Rechte auch beim Systemstart korrekt. Für die dauerhafte Korrektur das Projekt wie oben beschrieben aktualisieren und den Installer erneut ausführen; der einzelne `chmod`-Befehl wirkt bei der alten Version nur bis zum nächsten Neustart. Das private Spoolverzeichnis behält seine bisherigen Rechte.
+
+### Drucker unter Windows hinzufügen
 
 Nach der Installation unter Windows die Druckerfreigabe `\\kienzlebox\Terminzettel` verbinden und in T2med als Drucker auswählen. Falls der Raspberry Pi anders heißt, `kienzlebox` entsprechend ersetzen. `TMm10` bleibt die bereits vorhandene lokale CUPS-Ausgabewarteschlange auf dem Raspberry Pi.
 
@@ -119,6 +146,8 @@ Es gibt keine Archivierung, keine Debug-Kopien und keinen Export von Belegen ode
 Samba-Spooldateien werden beim Übernehmen entfernt. Konvertierungen und CUPS-Zwischendaten liegen auf einem begrenzten RAM-Dateisystem. Das tmpfs kann bei aktiviertem Betriebssystem-Swap ausgelagert werden. PDF wird direkt per Pipe verarbeitet. PostScript und XPS benötigen kurzzeitig Dateien im geschützten RAM-Verzeichnis.
 
 CUPS bekommt nur den festen Auftragsnamen `Terminzettel`. Der Auftrag wird nach Beendigung entfernt, bei Fehlern oder nach 60 Sekunden abgebrochen. Ein Bereinigungsdienst entfernt verwaiste Aufträge und Dateien; bei einem Absturz können Daten bis zum nächsten Bereinigungslauf kurzzeitig im RAM verbleiben. Nach einem Neustart stehen diese Aufträge nicht mehr zur Verfügung. Ein fehlgeschlagener Auftrag wird aus T2med neu gedruckt.
+
+Auch der neue Bonjour-/IPP-Eingang verwendet den vorübergehenden CUPS-Zwischenspeicher. Vom Client übermittelte Benutzernamen und Dokumenttitel können dort während des Auftrags vorhanden sein. Der Folgeauftrag an `TMm10` verwendet den festen Namen `Terminzettel`.
 
 Die Überwachung bestätigt den CUPS-Auftrag, nicht den tatsächlichen Papierauswurf. Bei ausgeschalteter Druckhistorie kann ein bereits entfernter Auftrag nachträglich nicht mehr nach Erfolg oder Abbruch unterschieden werden.
 

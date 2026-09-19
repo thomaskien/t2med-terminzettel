@@ -119,6 +119,7 @@ class TransactionTests(unittest.TestCase):
             state.exists.return_value = False
             stack.enter_context(patch.object(installer, "STATE", state))
             stack.enter_context(patch.object(installer, "plan", return_value=changes))
+            stack.enter_context(patch.object(installer.cups_queue, "inspect_queue", return_value=None))
             stack.enter_context(patch.object(installer, "snapshot", return_value=None))
             stack.enter_context(patch.object(installer, "run", side_effect=run))
             for name in ("prepare_runtime", "validate", "check_idle", "atomic_write", "write_file", "start_previous"):
