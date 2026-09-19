@@ -13,6 +13,8 @@ except ModuleNotFoundError:
 
 BEGIN = "# BEGIN TERMINZETTEL MANAGED"
 END = "# END TERMINZETTEL MANAGED"
+APPARMOR_PROFILE = "/etc/apparmor.d/usr.sbin.cupsd"
+APPARMOR_LOCAL = "/etc/apparmor.d/local/usr.sbin.cupsd"
 
 
 def remove_block(text: str) -> str:
@@ -187,7 +189,7 @@ def plan(source: Path, root: Path = Path("/")) -> dict[str, str]:
         return (root / path.lstrip("/")).read_text()
     config = root / "etc/terminzettel/config.toml"
     defaults = (source / "config.toml").read_text()
-    return {
+    changes = {
         "/etc/samba/smb.conf": samba_config(read("/etc/samba/smb.conf")),
         "/etc/cups/cups-files.conf": cups_files_config(read("/etc/cups/cups-files.conf")),
         "/etc/cups/cupsd.conf": cups_daemon_config(read("/etc/cups/cupsd.conf")),
@@ -207,3 +209,10 @@ def plan(source: Path, root: Path = Path("/")) -> dict[str, str]:
         "/etc/systemd/system/terminzettel-cleanup.service": CLEANUP_SERVICE,
         "/etc/systemd/system/terminzettel-cleanup.timer": CLEANUP_TIMER,
     }
+    if (root / APPARMOR_PROFILE.lstrip("/")).is_file():
+        local = root / APPARMOR_LOCAL.lstrip("/")
+        changes[APPARMOR_LOCAL] = managed(local.read_text() if local.exists() else "", """
+/{,var/}run/terminzettel/cups/{,**} rwk,
+/{,var/}run/terminzettel/cups-cache/{,**} rwk,
+""")
+    return changes

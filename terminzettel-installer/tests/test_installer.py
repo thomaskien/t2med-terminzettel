@@ -71,6 +71,17 @@ class ConfigTests(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("# initial\n")
             result = cfg.plan(ROOT, root)
+            self.assertNotIn(cfg.APPARMOR_LOCAL, result)
+            profile = root / cfg.APPARMOR_PROFILE.lstrip("/")
+            profile.parent.mkdir(parents=True)
+            profile.write_text("# synthetic distro profile\n")
+            local = root / cfg.APPARMOR_LOCAL.lstrip("/")
+            local.parent.mkdir()
+            local.write_text("# existing local rule\n/other/path r,\n")
+            extended = cfg.plan(ROOT, root)[cfg.APPARMOR_LOCAL]
+            self.assertIn("/other/path r,", extended)
+            self.assertIn("/run/terminzettel/cups/", extended.replace("/{,var/}run", "/run"))
+            self.assertEqual(cfg.remove_block(extended).strip(), local.read_text().strip())
         self.assertEqual(result["/usr/local/lib/terminzettel/terminzettel.py"], (ROOT / "terminzettel.py").read_text())
 
 

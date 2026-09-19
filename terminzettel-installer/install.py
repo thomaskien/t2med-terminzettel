@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 
-from setup_config import plan, remove_block, tomllib
+from setup_config import APPARMOR_LOCAL, APPARMOR_PROFILE, plan, remove_block, tomllib
 import cups_queue
 
 SOURCE = Path(__file__).resolve().parent
@@ -74,6 +74,13 @@ def start_previous(active):
     for service in reversed(SERVICES):
         if service in active:
             run("systemctl", "start", service)
+
+
+def reload_apparmor():
+    profiles = Path("/sys/kernel/security/apparmor/profiles")
+    if Path(APPARMOR_PROFILE).is_file() and profiles.is_file():
+        if any(line.startswith("/usr/sbin/cupsd ") for line in profiles.read_text().splitlines()):
+            run("apparmor_parser", "-r", APPARMOR_PROFILE)
 
 
 def prepare_runtime():
@@ -141,7 +148,7 @@ def install():
     for name, saved in before.items():
         if name not in originals:
             originals[name] = saved
-        if name in CONFIGS and saved:
+        if name in (*CONFIGS, APPARMOR_LOCAL) and saved:
             # Fremde zwischenzeitliche Änderungen bleiben auch bei Deinstallation erhalten.
             clean = remove_block(base64.b64decode(saved["data"]).decode())
             originals[name] = dict(saved, data=base64.b64encode(clean.encode()).decode())
@@ -163,6 +170,7 @@ def install():
                 run("systemctl", "stop", service)
         for name, text in changes.items():
             write_file(name, text, before[name])
+        reload_apparmor()
         run("systemctl", "daemon-reload")
         run("systemctl", "start", "terminzettel-runtime.service")
         run("systemctl", "restart", "cups.service", "smbd.service")
@@ -185,6 +193,7 @@ def install():
         if not timer_enabled:
             run("systemctl", "disable", "--now", "terminzettel-cleanup.timer", optional=True)
         restore(before)
+        reload_apparmor()
         start_previous(active)
         raise
     print("Installation abgeschlossen. CUPS-/Bonjour-Drucker Terminzettel ist freigegeben.")
@@ -217,11 +226,13 @@ def uninstall():
                 run("systemctl", "stop", service)
         run("systemctl", "disable", "--now", "terminzettel-cleanup.timer")
         restore(state["originals"])
+        reload_apparmor()
         run("systemctl", "stop", "terminzettel-runtime.service")
         run("umount", "/run/terminzettel")
         start_previous(active)
     except BaseException:
         restore(before)
+        reload_apparmor()
         start_previous(active)
         if removed_queue:
             cups_queue.restore_queue(run, virtual_before)
