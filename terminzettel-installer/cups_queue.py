@@ -40,6 +40,12 @@ def delete_queue(run, *, optional=False):
 
 def restore_queue(run, saved):
     attrs = saved["attributes"]
+    access = []
+    for mode in ("allowed", "denied"):
+        users = attrs.get("requesting-user-name-" + mode)
+        if users:
+            access = ["-u", ("allow:" if mode == "allowed" else "deny:") + ",".join(users)]
+            break
     with tempfile.TemporaryDirectory(prefix="terminzettel-restore-", dir="/run") as directory:
         ppd = Path(directory) / "printer.ppd"
         ppd.write_bytes(saved["ppd"])
@@ -47,7 +53,9 @@ def restore_queue(run, saved):
             "-D", attrs.get("printer-info", NAME), "-L", attrs.get("printer-location", ""),
             "-o", "printer-is-shared=" + str(attrs.get("printer-is-shared", True)).lower(),
             "-o", "printer-error-policy=" + attrs.get("printer-error-policy", "abort-job"),
-            "-o", "job-sheets-default=" + ",".join(attrs.get("job-sheets-default", ["none", "none"])))
+            "-o", "printer-op-policy=" + attrs.get("printer-op-policy", "default"),
+            "-o", "job-sheets-default=" + ",".join(attrs.get("job-sheets-default", ["none", "none"])),
+            *access)
     conn = connection()
     (conn.disablePrinter if attrs.get("printer-state") == 5 else conn.enablePrinter)(NAME)
     (conn.acceptJobs if attrs.get("printer-is-accepting-jobs", True) else conn.rejectJobs)(NAME)

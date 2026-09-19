@@ -66,9 +66,9 @@ def cups_files_config(text: str) -> str:
 RequestRoot /run/terminzettel/cups
 TempDir /run/terminzettel/cups/tmp
 CacheDir /run/terminzettel/cups-cache
-AccessLog
-PageLog
-ErrorLog
+AccessLog /dev/null
+PageLog /dev/null
+ErrorLog /dev/null
 """)
 
 

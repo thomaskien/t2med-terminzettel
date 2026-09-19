@@ -82,6 +82,23 @@ class BackendTests(unittest.TestCase):
 
 
 class QueueTests(unittest.TestCase):
+    def test_rollback_preserves_access_policy_and_stopped_state(self):
+        for mode, value in (("allowed", "allow:"), ("denied", "deny:")):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as directory:
+                saved = {"ppd": b"synthetic", "attributes": {
+                    "printer-op-policy": "authenticated", "printer-state": 5,
+                    "printer-is-accepting-jobs": False,
+                    "requesting-user-name-" + mode: ["example"]}}
+                conn, run = Mock(), Mock()
+                with patch.object(queue, "connection", return_value=conn), \
+                        patch.object(queue.tempfile, "TemporaryDirectory") as temporary:
+                    temporary.return_value.__enter__.return_value = directory
+                    queue.restore_queue(run, saved)
+                self.assertIn("printer-op-policy=authenticated", run.call_args.args)
+                self.assertIn(value + "example", run.call_args.args)
+                conn.disablePrinter.assert_called_once_with(queue.NAME)
+                conn.rejectJobs.assert_called_once_with(queue.NAME)
+
     def test_absent_queue(self):
         conn = Mock()
         conn.getPrinters.return_value = {"TMm10": {}}

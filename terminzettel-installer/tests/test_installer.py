@@ -52,7 +52,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_cups_storage_and_logs_are_configured(self):
         files = cfg.cups_files_config("# Existing CUPS config\n")
-        for setting in ("RequestRoot /run/terminzettel/cups", "TempDir /run/terminzettel/cups/tmp", "CacheDir /run/terminzettel/cups-cache", "\nAccessLog\n", "\nPageLog\n", "\nErrorLog\n"):
+        for setting in ("RequestRoot /run/terminzettel/cups", "TempDir /run/terminzettel/cups/tmp", "CacheDir /run/terminzettel/cups-cache", "\nAccessLog /dev/null\n", "\nPageLog /dev/null\n", "\nErrorLog /dev/null\n"):
             self.assertIn(setting, files)
         daemon = cfg.cups_daemon_config("LogLevel warn\n")
         self.assertIn("PreserveJobHistory No", daemon)
@@ -105,6 +105,36 @@ class RuntimeSetupTests(unittest.TestCase):
 
 
 class TransactionTests(unittest.TestCase):
+    def test_queue_failure_rolls_back_only_newly_created_queue(self):
+        changes = {"/etc/terminzettel/config.toml": '[output]\nqueue="TMm10"\n'}
+        for existing, failure in ((False, "create_queue"), (False, "verify_queue"), (True, "verify_queue")):
+            with self.subTest(existing=existing, failure=failure), ExitStack() as stack:
+                state = MagicMock()
+                state.exists.return_value = existing
+                state.read_text.return_value = json.dumps({"originals": {}, "cups_queue": existing})
+                stack.enter_context(patch.object(installer, "STATE", state))
+                stack.enter_context(patch.object(installer, "plan", return_value=changes))
+                stack.enter_context(patch.object(installer, "snapshot", return_value=None))
+                def run(*args, **kwargs):
+                    return subprocess.CompletedProcess(args, 0, b"standalone server\n" if args[0] == "testparm" else b"", b"")
+                stack.enter_context(patch.object(installer, "run", side_effect=run))
+                for name in ("prepare_runtime", "validate", "check_idle", "atomic_write", "write_file", "start_previous", "restore"):
+                    stack.enter_context(patch.object(installer, name))
+                stack.enter_context(patch.object(installer.os, "chmod"))
+                stack.enter_context(patch.object(installer.cups_queue, "inspect_queue", return_value={} if existing else None))
+                create = stack.enter_context(patch.object(installer.cups_queue, "create_queue"))
+                verify = stack.enter_context(patch.object(installer.cups_queue, "verify_queue"))
+                delete = stack.enter_context(patch.object(installer.cups_queue, "delete_queue"))
+                (create if failure == "create_queue" else verify).side_effect = RuntimeError("synthetic queue failure")
+                with self.assertRaisesRegex(RuntimeError, "queue failure"):
+                    installer.install()
+                installer.restore.assert_called_once_with({name: None for name in changes})
+                if existing:
+                    create.assert_not_called()
+                    delete.assert_not_called()
+                else:
+                    delete.assert_called_once_with(installer.run, optional=True)
+
     def test_failed_service_restart_rolls_back_and_does_not_report_success(self):
         changes = {"/etc/terminzettel/config.toml": '[output]\nqueue="TMm10"\n', "/usr/local/sbin/terminzettel-submit": "new"}
 

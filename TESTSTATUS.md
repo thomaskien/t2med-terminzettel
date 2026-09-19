@@ -4,7 +4,7 @@ Stand: 19. September 2026. Die Software ist für den Gerätetest vorbereitet; ei
 
 ## Automatisiert geprüft
 
-- 96 Tests lokal unter Python 3.14 mit CUPS-Eingang und ohne cgroup-/Swap-Sperre: 95 bestanden, ein PostScript-Integrationstest übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
+- 98 Tests lokal unter Python 3.14 mit CUPS-Eingang und ohne cgroup-/Swap-Sperre: 97 bestanden, ein PostScript-Integrationstest übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
 - Echte PDF-Textextraktion mit Poppler; PostScript-Fehlerbehandlung und Aufräumen separat getestet.
 - Einseitige T2med-Erkennung, mehrzeilige Beschreibungen, Sortierung, Duplikate und Ablehnung beschädigter Terminzeilen.
 - Flüchtige Dateiverarbeitung, Löschung übernommener Eingaben auch im Fehlerfall, feste Fehlermeldungen ohne Beleginhalte sowie CUPS-Auftragsablauf mit simuliertem Server.
