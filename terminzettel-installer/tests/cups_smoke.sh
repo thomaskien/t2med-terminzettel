@@ -5,6 +5,7 @@ if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_OS:-}" != Linux || $EUID -ne 0 
   echo "Dieser Integrationstest läuft ausschließlich als root in GitHub Actions." >&2
   exit 1
 fi
+trap 'journalctl -k --no-pager --grep="apparmor=.*DENIED" -n 12 || true' ERR
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 run_installer() {
   python3 -B - "$SOURCE_DIR" "$@" <<'PY'
