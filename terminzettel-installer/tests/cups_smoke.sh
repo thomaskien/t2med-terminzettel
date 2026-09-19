@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Ausschließlich für die kurzlebige GitHub-Actions-VM, niemals auf dem Praxisrechner.
-set -euo pipefail
+set -Eeuo pipefail
 if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_OS:-}" != Linux || $EUID -ne 0 ]]; then
   echo "Dieser Integrationstest läuft ausschließlich als root in GitHub Actions." >&2
   exit 1
