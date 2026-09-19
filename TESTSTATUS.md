@@ -14,9 +14,9 @@ Stand: 19. September 2026. Die Software ist für den Gerätetest vorbereitet; ei
 - Python-3.10-Syntax aller Programmmodule und 16 Parser-Tests mit einem echten Python-3.10-Interpreter geprüft.
 - Shell-Syntax, CLI-Selbsttest und Git-Diff auf Formatfehler geprüft.
 
-Ein zusätzlicher Linux-Integrationstest prüft Installation, Update, PDF-Eingang über CUPS, fertigen ESC/POS-Bon mit QR, Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Der aktuelle Erfolg dieses Tests ist unter Actions sichtbar. Die PPD wurde lokal mit `cupstestppd` geprüft.
+Der [Linux-Integrationstest vom 19. September 2026](https://github.com/thomaskien/t2med-terminzettel/actions/runs/35460405990) ist erfolgreich: Installation, Update, PDF und PostScript über IPP/CUPS, fertiger ESC/POS-Bon mit QR, Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Die vorhandene Zielwarteschlange bleibt erhalten. Der Test läuft mit aktivem AppArmor; der Installer ergänzt gegebenenfalls die benötigten Regeln für den RAM-Zwischenspeicher. Die PPD besteht `cupstestppd`.
 
-Die GitHub-Actions-Konfiguration führt die Suite unter Python 3.10 und 3.13 mit Poppler und Ghostscript aus. Ihr aktueller Ausführungsstatus ist im Repository unter **Actions** sichtbar.
+Im selben GitHub-Actions-Lauf bestanden alle 98 Tests sowohl unter Python 3.10 als auch unter Python 3.13 mit Poppler und Ghostscript, einschließlich der echten PostScript-Konvertierung. Weitere Ausführungen sind im Repository unter **Actions** sichtbar.
 
 ## Gemessene QR-Größen
 
