@@ -4,7 +4,7 @@ Stand: 19. September 2026. Die Software ist für den Gerätetest vorbereitet; ei
 
 ## Automatisiert geprüft
 
-- 101 Tests lokal unter Python 3.14 mit CUPS-Eingang und ohne cgroup-/Swap-Sperre: 100 bestanden, ein PostScript-Integrationstest übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
+- 102 Tests lokal unter Python 3.14 mit CUPS-Eingang und ohne cgroup-/Swap-Sperre: 100 bestanden, zwei PostScript-Integrationstests übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
 - Echte PDF-Textextraktion mit Poppler; PostScript-Fehlerbehandlung und Aufräumen separat getestet.
 - Einseitige T2med-Erkennung, mehrzeilige Beschreibungen, Sortierung, Duplikate und Ablehnung beschädigter Terminzeilen.
 - Konkrete feste CUPS-Fehlermeldungen für Verarbeitung, Konfiguration und Ausgabe; fremde Fehlertexte, Benutzernamen und Dokumenttitel bleiben unterdrückt.
@@ -15,9 +15,9 @@ Stand: 19. September 2026. Die Software ist für den Gerätetest vorbereitet; ei
 - Python-3.10-Syntax aller Programmmodule und 16 Parser-Tests mit einem echten Python-3.10-Interpreter geprüft.
 - Shell-Syntax, CLI-Selbsttest und Git-Diff auf Formatfehler geprüft.
 
-Der [Linux-Integrationstest vom 19. September 2026](https://github.com/thomaskien/t2med-terminzettel/actions/runs/35460405990) ist erfolgreich: Installation, Update, PDF und PostScript über IPP/CUPS, fertiger ESC/POS-Bon mit QR, Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Die vorhandene Zielwarteschlange bleibt erhalten. Der Test läuft mit aktivem AppArmor; der Installer ergänzt gegebenenfalls die benötigten Regeln für den RAM-Zwischenspeicher. Die PPD besteht `cupstestppd`.
+Der [Linux-Integrationstest vom 19. September 2026](https://github.com/thomaskien/t2med-terminzettel/actions/runs/35471669091) ist erfolgreich: Installation, Update, PDF und PostScript über IPP/CUPS, fertiger ESC/POS-Bon mit QR, Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Die vorhandene Zielwarteschlange bleibt erhalten. Der Test läuft mit aktivem AppArmor; der Installer ergänzt gegebenenfalls die benötigten Regeln für den RAM-Zwischenspeicher. Die PPD besteht `cupstestppd`.
 
-Im selben GitHub-Actions-Lauf bestanden alle 98 Tests sowohl unter Python 3.10 als auch unter Python 3.13 mit Poppler und Ghostscript, einschließlich der echten PostScript-Konvertierung. Weitere Ausführungen sind im Repository unter **Actions** sichtbar.
+Im selben GitHub-Actions-Lauf bestanden alle 102 Tests sowohl unter Python 3.10 als auch unter Python 3.13 mit Poppler und Ghostscript, einschließlich der echten PostScript-Konvertierung und eines mit dem macOS-Treiber „Generic PostScript Printer“ erzeugten Musterzettels. Auch die sichtbare sichere Fehlermeldung nach einer abgewiesenen Eingabe ist mit laufendem CUPS geprüft. Weitere Ausführungen sind im Repository unter **Actions** sichtbar.
 
 ## Gemessene QR-Größen
 
