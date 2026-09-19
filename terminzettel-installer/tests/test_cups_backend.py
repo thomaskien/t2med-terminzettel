@@ -14,7 +14,7 @@ TEXT = b"TERMINE\nTestperson Alpha\nTerminzeitpunkt Termintyp\nSa. 19.09.2026, 0
 
 
 class BackendTests(unittest.TestCase):
-    def execute(self, args, data=TEXT):
+    def execute(self, args, data=TEXT, failure=None):
         output, error = io.StringIO(), io.StringIO()
         stdin = Mock(buffer=io.BytesIO(data))
         with contextlib.ExitStack() as stack:
@@ -26,6 +26,8 @@ class BackendTests(unittest.TestCase):
             stack.enter_context(patch.object(backend.app, "ensure_runtime"))
             stack.enter_context(patch.object(backend.app, "load_config", return_value={}))
             send = stack.enter_context(patch.object(backend.app, "send_cups"))
+            if failure:
+                stack.enter_context(patch.object(backend.app, failure[0], side_effect=failure[1]))
             status = backend.main(args)
         return status, output.getvalue(), error.getvalue(), send, drop
 
@@ -58,7 +60,34 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(result[0], 1)
         self.assertEqual(result[1], "")
         self.assertNotIn("Private", result[2])
+        self.assertIn("Tabellenkopf", result[2])
         result[3].assert_not_called()
+
+    def test_safe_error_keeps_exact_program_diagnostic(self):
+        result = self.execute(["1", "Private User", "Private Title", "1", ""],
+                              failure=("make_payload", backend.app.TicketError("Die Dateiumwandlung ist fehlgeschlagen.")))
+        self.assertEqual(result[0], 1)
+        self.assertEqual(result[2], "ERROR: Terminzettel: Die Dateiumwandlung ist fehlgeschlagen.\n")
+        self.assertNotIn("Private", result[1] + result[2])
+        result[3].assert_not_called()
+
+    def test_unexpected_failure_reports_only_phase(self):
+        for method, expected in (("load_config", "Konfiguration"),
+                                 ("make_payload", "Beleg"), ("send_cups", "CUPS-Ausgabe")):
+            with self.subTest(method=method):
+                result = self.execute(["1", "Private User", "Private Title", "1", ""],
+                                      failure=(method, RuntimeError("Private patient contents")))
+                self.assertEqual(result[0], 1)
+                self.assertIn(expected, result[2])
+                self.assertNotIn("Private", result[1] + result[2])
+                self.assertNotIn("Traceback", result[2])
+
+    def test_cancellation_has_fixed_message(self):
+        result = self.execute(["1", "Private User", "Private Title", "1", ""],
+                              failure=("send_cups", KeyboardInterrupt("Private patient contents")))
+        self.assertEqual(result[0], 1)
+        self.assertIn("Druckauftrag wurde abgebrochen", result[2])
+        self.assertNotIn("Private", result[1] + result[2])
 
     def test_invalid_copy_count_never_prints(self):
         for count in ("0", "-1", "100", "Private Title"):

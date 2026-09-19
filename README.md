@@ -76,6 +76,19 @@ Der Installer sichert die Konfiguration, schützt fremde gleichnamige Freigaben 
 
 **Die RAM-Umstellung betrifft den lokalen CUPS-Dienst und den Samba-Druckcache insgesamt.** Druckwarteschlangen, Druckhistorie und vorübergehende Druckdaten gehen bei einem Neustart verloren. CUPS-Dateilogs und das normale Samba-Dateilog werden deaktiviert. Vorhandene Drucker bleiben konfiguriert. Ein eigenständiger Samba-Server wird vorausgesetzt; Domänenserver werden abgelehnt. Bei vorhandenem AppArmor-Profil ergänzt der Installer automatisch die CUPS-Zugriffsregeln für den RAM-Zwischenspeicher.
 
+### Wenn kein Bon erscheint
+
+Direkt nach dem Druckversuch auf dem Raspberry Pi prüfen:
+
+```bash
+lpstat -p Terminzettel -l
+lpstat -p TMm10 -l
+```
+
+Bei `Terminzettel` steht die konkrete feste Fehlermeldung, zum Beispiel zur Dateiumwandlung, zum fehlenden Tabellenkopf oder zur CUPS-Ausgabe. Patientenname und Beleginhalt werden nicht ausgegeben. Bei älteren Versionen erscheint nur „Terminzettel konnte nicht verarbeitet werden“: aktualisieren, den Termin erneut drucken und den Status nochmals abfragen.
+
+Das Terminblatt muss als PDF oder PostScript mit lesbarem Text ankommen. Eine gewöhnliche Drucker-Testseite enthält keine T2med-Termine und wird deshalb abgewiesen. `terminzettel-submit --self-test` prüft nur das Programm und druckt keinen Bon.
+
 ## Konfiguration
 
 ```bash

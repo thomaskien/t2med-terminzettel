@@ -29,6 +29,7 @@ def main(args=None):
     if not args:
         print('direct terminzettel:/ "T2med Terminzettel" "Terminzettel"')
         return 0
+    failure = "CUPS-Eingabe oder Benutzerrechte konnten nicht übernommen werden."
     try:
         if len(args) not in (5, 6):
             raise ValueError("invalid backend arguments")
@@ -41,15 +42,26 @@ def main(args=None):
         source = open(args[5], "rb") if len(args) == 6 else nullcontext(sys.stdin.buffer)
         with source as stream:
             drop_privileges()
+            failure = "RAM-Verzeichnis oder Druckeingabe konnte nicht gelesen werden."
             app.ensure_runtime()
             data = stream.read(app.MAX_INPUT + 1)
+        failure = "Konfiguration konnte nicht geladen werden. Bitte config.toml prüfen."
         cfg = app.load_config(app.DEFAULT_CONFIG)
+        failure = "Beleg konnte nicht umgewandelt oder als Terminbon aufbereitet werden."
         payload = app.make_payload(data, cfg)
+        failure = "CUPS-Ausgabe fehlgeschlagen. Bitte die Zielwarteschlange prüfen."
         app.send_cups(payload, cfg, copies=copies)
         return 0
-    except (Exception, KeyboardInterrupt):
-        # CUPS-Argumente können Namen und Dokumenttitel enthalten: nie ausgeben.
-        print("ERROR: Terminzettel konnte nicht verarbeitet werden.", file=sys.stderr)
+    except app.TicketError as exc:
+        # TicketError enthält ausschließlich feste, vom Programm vorgegebene Texte.
+        print("ERROR: Terminzettel: " + str(exc), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("ERROR: Terminzettel: Druckauftrag wurde abgebrochen.", file=sys.stderr)
+        return 1
+    except Exception:
+        # Fremde Fehlertexte, CUPS-Argumente und Tracebacks können Patientendaten enthalten.
+        print("ERROR: Terminzettel: " + failure, file=sys.stderr)
         return 1
 
 

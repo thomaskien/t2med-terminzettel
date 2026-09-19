@@ -170,15 +170,15 @@ def parse_t2med(text: str) -> ParsedTicket:
     text = safe_text(text).replace("\u00a0", " ").replace("\r\n", "\n").replace("\r", "\n")
     pages = [page for page in text.split("\f") if page.strip()]
     if len(pages) != 1:
-        raise ValueError("Genau eine nichtleere Seite erforderlich.")
+        raise TicketError("Genau eine nichtleere Seite erforderlich.")
     lines = pages[0].expandtabs(8).splitlines()
     headers = [i for i, line in enumerate(lines) if "Terminzeitpunkt" in line and "Termintyp" in line]
     if len(headers) != 1:
-        raise ValueError("Genau ein Tabellenkopf Terminzeitpunkt / Termintyp erforderlich.")
+        raise TicketError("Tabellenkopf Terminzeitpunkt / Termintyp fehlt oder kommt mehrfach vor.")
     header = headers[0]
     names = [line.strip() for line in lines[:header] if line.strip() and not line.strip().upper().startswith("TERMINE")]
     if not names:
-        raise ValueError("Patientenname fehlt.")
+        raise TicketError("Patientenname fehlt.")
     appointments: list[Appointment] = []
     current = None
     type_column = 0
@@ -190,7 +190,7 @@ def parse_t2med(text: str) -> ParsedTicket:
             try:
                 date_time = datetime.strptime(match.group("date") + " " + match.group("time"), "%d.%m.%Y %H:%M")
             except ValueError:
-                raise ValueError("Ungültiges Datum oder ungültige Uhrzeit.") from None
+                raise TicketError("Ungültiges Datum oder ungültige Uhrzeit.") from None
             current = Appointment(
                 weekday=WEEKDAYS[match.group("weekday")],
                 date=date_time.strftime("%d.%m.%Y"),
@@ -202,14 +202,14 @@ def parse_t2med(text: str) -> ParsedTicket:
             continue
         # Auch beschädigte Terminzeilen dürfen nicht als Beschreibung verschwinden.
         if re.match(r"^\s*(?:(?:Mo|Di|Mi|Do|Fr|Sa|So)\.?\s+)?\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b", line):
-            raise ValueError("Unvollständige oder ungültige Terminzeile.")
+            raise TicketError("Unvollständige oder ungültige Terminzeile.")
         indent = len(line) - len(line.lstrip())
         if current is not None and indent >= type_column:
             current.kind += " " + " ".join(line.split())
         else:
             current = None  # Nicht eingerückter Fußtext beendet die Fortsetzung.
     if not appointments:
-        raise ValueError("Keine T2med-Termine gefunden.")
+        raise TicketError("Keine T2med-Termine gefunden.")
     seen = set()
     unique = []
     for appointment in appointments:
@@ -503,6 +503,8 @@ def make_payload(data: bytes, cfg: dict[str, Any]) -> bytes:
     text = safe_text(extract_text(data, cfg))
     try:
         ticket = parse_t2med(text)
+    except TicketError:
+        raise
     except ValueError:
         raise TicketError("Ungültiger Beleg: eine Seite, ein Patient und vollständige Termine erforderlich.") from None
     return render(ticket, cfg)

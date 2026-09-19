@@ -4,9 +4,10 @@ Stand: 19. September 2026. Die Software ist für den Gerätetest vorbereitet; ei
 
 ## Automatisiert geprüft
 
-- 98 Tests lokal unter Python 3.14 mit CUPS-Eingang und ohne cgroup-/Swap-Sperre: 97 bestanden, ein PostScript-Integrationstest übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
+- 101 Tests lokal unter Python 3.14 mit CUPS-Eingang und ohne cgroup-/Swap-Sperre: 100 bestanden, ein PostScript-Integrationstest übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
 - Echte PDF-Textextraktion mit Poppler; PostScript-Fehlerbehandlung und Aufräumen separat getestet.
 - Einseitige T2med-Erkennung, mehrzeilige Beschreibungen, Sortierung, Duplikate und Ablehnung beschädigter Terminzeilen.
+- Konkrete feste CUPS-Fehlermeldungen für Verarbeitung, Konfiguration und Ausgabe; fremde Fehlertexte, Benutzernamen und Dokumenttitel bleiben unterdrückt.
 - Flüchtige Dateiverarbeitung, Löschung übernommener Eingaben auch im Fehlerfall, feste Fehlermeldungen ohne Beleginhalte sowie CUPS-Auftragsablauf mit simuliertem Server.
 - Installer-Konfiguration, Sicherung/Rücknahme bei Dienstfehlern und Schutz nachträglich geänderter Dateien. Installation und Verarbeitung mit normalem tmpfs ohne cgroup-/Swap-Prüfungen; Einhängefehler werden weiterhin erkannt.
 - iCalendar für einen, zwei und fünf Termine; Zeitzonen einschließlich Sommer-/Winterzeit, Dauer, Endzeit, Sortierung, Duplikate, Escaping, UTF-8-Zeilenfaltung und optionale Adresse. Unabhängig mit `icalendar` eingelesen.

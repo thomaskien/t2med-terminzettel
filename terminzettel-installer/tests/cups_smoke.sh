@@ -88,6 +88,20 @@ listing = subprocess.run(['avahi-browse', '-rt', '_ipp._tcp'], capture_output=Tr
 assert b'Terminzettel' in listing, 'Bonjour advertisement missing'
 assert Path('/run/terminzettel/samba-cache').stat().st_mode & 0o777 == 0o755
 print('Bonjour: OK', flush=True)
+destination.unlink()
+source = Path('/tmp/terminzettel-smoke-invalid.pdf')
+source.write_bytes(pdf_fixture().replace(b'Terminzeitpunkt', b'X' * len(b'Terminzeitpunkt')))
+conn.printFile('Terminzettel', str(source), 'Private synthetic title', {})
+for _ in range(60):
+    if not conn.getJobs(which_jobs='not-completed'):
+        break
+    time.sleep(0.5)
+assert not conn.getJobs(which_jobs='not-completed'), 'Invalid job did not finish'
+message = conn.getPrinterAttributes('Terminzettel').get('printer-state-message', '')
+assert 'Tabellenkopf' in message, 'Safe error is not visible in printer status'
+assert 'Private' not in message and 'Testperson' not in message
+assert not destination.exists(), 'Invalid input must not produce a receipt'
+print('Detailed safe error is visible in printer status: OK', flush=True)
 PY
 run_installer --uninstall
 python3 -B - <<'PY'
