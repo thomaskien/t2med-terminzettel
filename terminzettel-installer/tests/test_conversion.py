@@ -27,6 +27,10 @@ def pdf_fixture():
     return bytes(data)
 
 
+def postscript_fixture():
+    return b"%!PS-Adobe-3.0\n/Helvetica findfont 11 scalefont setfont\n50 780 moveto (TERMINE) show\n50 760 moveto (Testperson Alpha) show\n50 740 moveto (Terminzeitpunkt              Termintyp) show\n50 720 moveto (Do. 17.09.2026, 09:00 Kontrolle) show\nshowpage\n"
+
+
 class ConversionTests(unittest.TestCase):
     def setUp(self):
         original = app.run_checked
@@ -51,9 +55,8 @@ class ConversionTests(unittest.TestCase):
             subprocess.run(["gs", "--version"], check=True, capture_output=True)
         except (OSError, subprocess.CalledProcessError):
             self.skipTest("Lokales Ghostscript nicht ausführbar")
-        source = b"%!PS-Adobe-3.0\n/Helvetica findfont 11 scalefont setfont\n50 780 moveto (TERMINE) show\n50 760 moveto (Testperson Alpha) show\n50 740 moveto (Terminzeitpunkt              Termintyp) show\n50 720 moveto (Do. 17.09.2026, 09:00 Kontrolle) show\nshowpage\n"
         with tempfile.TemporaryDirectory() as directory, patch.object(app, "WORK", Path(directory)):
-            ticket = app.parse_t2med(app.extract_text(source, {}))
+            ticket = app.parse_t2med(app.extract_text(postscript_fixture(), {}))
             self.assertEqual(len(ticket.appointments), 1)
             self.assertEqual(list(Path(directory).iterdir()), [])
 

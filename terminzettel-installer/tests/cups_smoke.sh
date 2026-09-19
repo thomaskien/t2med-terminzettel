@@ -23,6 +23,19 @@ PY
 }
 systemctl start cups.service smbd.service avahi-daemon.service
 cupsctl --share-printers
+# cupsctl reloads the scheduler; wait for IPP requests to work again.
+python3 - <<'PY'
+import cups
+import time
+for attempt in range(30):
+    try:
+        cups.Connection(host='/run/cups/cups.sock').getPrinters()
+        break
+    except (RuntimeError, cups.IPPError):
+        if attempt == 29:
+            raise
+        time.sleep(0.5)
+PY
 cat > /usr/lib/cups/backend/terminzettel-test <<'BACKEND'
 #!/usr/bin/python3
 import pathlib
@@ -35,6 +48,7 @@ else:
 BACKEND
 chmod 0700 /usr/lib/cups/backend/terminzettel-test
 lpadmin -p TMm10 -E -v terminzettel-test:/ -m raw
+echo 'Installing and updating Terminzettel'
 run_installer
 run_installer
 cupstestppd "$SOURCE_DIR/terminzettel.ppd"
@@ -45,29 +59,34 @@ import sys
 import time
 import cups
 sys.path.insert(0, sys.argv[1] + '/tests')
-from test_conversion import pdf_fixture
-conn = cups.Connection(host='/run/cups/cups.sock')
+from test_conversion import pdf_fixture, postscript_fixture
+conn = cups.Connection(host='127.0.0.1', port=631)
 attrs = conn.getPrinterAttributes('Terminzettel')
 assert attrs['printer-is-shared']
 assert attrs['device-uri'] == 'terminzettel:/'
 assert 'application/pdf' in attrs['document-format-supported']
-Path('/tmp/terminzettel-smoke.pdf').write_bytes(pdf_fixture())
-conn.printFile('Terminzettel', '/tmp/terminzettel-smoke.pdf', 'Synthetic test', {})
+assert 'application/postscript' in attrs['document-format-supported']
 destination = Path('/tmp/terminzettel-smoke-output')
-for _ in range(120):
-    if destination.exists() and not conn.getJobs(which_jobs='not-completed'):
-        break
-    time.sleep(0.5)
-assert destination.exists(), 'No receipt reached the synthetic printer'
-data = destination.read_bytes()
-assert b'Testperson Alpha' in data
-assert b'\x1dv0\x00' in data, 'QR raster missing'
-assert data.endswith(b'\x1dV\x01'), 'Cut missing'
-assert not conn.getJobs(which_jobs='not-completed'), 'Jobs did not finish'
+for suffix, data in (('pdf', pdf_fixture()), ('ps', postscript_fixture())):
+    destination.unlink(missing_ok=True)
+    source = Path('/tmp/terminzettel-smoke.' + suffix)
+    source.write_bytes(data)
+    conn.printFile('Terminzettel', str(source), 'Synthetic test', {})
+    for _ in range(120):
+        if destination.exists() and not conn.getJobs(which_jobs='not-completed'):
+            break
+        time.sleep(0.5)
+    assert destination.exists(), suffix + ': No receipt reached the synthetic printer'
+    data = destination.read_bytes()
+    assert b'Testperson Alpha' in data
+    assert b'\x1dv0\x00' in data, 'QR raster missing'
+    assert data.endswith(b'\x1dV\x01'), 'Cut missing'
+    assert not conn.getJobs(which_jobs='not-completed'), 'Jobs did not finish'
+    print(suffix + ' -> IPP/CUPS -> Terminzettel -> ESC/POS + QR -> TMm10: OK', flush=True)
 listing = subprocess.run(['avahi-browse', '-rt', '_ipp._tcp'], capture_output=True, check=True, timeout=20).stdout
 assert b'Terminzettel' in listing, 'Bonjour advertisement missing'
 assert Path('/run/terminzettel/samba-cache').stat().st_mode & 0o777 == 0o755
-print('PDF -> CUPS -> Terminzettel -> ESC/POS + QR -> TMm10: OK; Bonjour: OK')
+print('Bonjour: OK', flush=True)
 PY
 run_installer --uninstall
 python3 -B - <<'PY'
