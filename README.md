@@ -193,7 +193,7 @@ Die QR-Codes benötigen weder URL noch Internet oder Kalenderdienst. Der Kalende
 
 **Ein langer Kalendertitel oder eine lange Adresse kann die lesbare QR-Größe überschreiten.** Dann fehlt nur der betroffene QR; die lesbaren Termine und die übrigen Codes werden weiterhin gedruckt. Das gilt auch bei einem QR-Fehler. Es erscheinen nur feste technische Fehlermeldungen, keine QR-Inhalte. Für `max_width_dots` sind höchstens 384 Punkte zulässig; im Layout wird die Breite zusätzlich so begrenzt, dass links die Uhrzeit vollständig Platz hat (bei Font A und doppelter Breite höchstens 288 Punkte). Mindestens drei Punkte pro Modul und vier freie Randmodule werden erzwungen. Im Ausgabeformat `text` gibt es keinen QR.
 
-Die Vorgabe ist `max_width_dots = 256`. Ein kurzer Titel wie „Praxis ABC: Lufu“ ergibt typischerweise 219 × 219 Punkte einschließlich freiem Rand. Die konkrete Größe hängt von Titel und optionaler Adresse ab. Der QR steht rechtsbündig im 420 Punkte breiten Druckbereich des TM-m10. Links stehen Uhrzeit und Terminart in der bisherigen großen Druckerschrift. Lange Terminarten werden umgebrochen; der QR wird dabei weder gestaucht noch angeschnitten.
+Die Vorgabe ist `max_width_dots = 256`. Ein kurzer Titel wie „Praxis ABC: Lufu“ ergibt im geprüften Beispiel 207 × 207 Punkte einschließlich freiem Rand. Die konkrete Größe hängt von Titel und optionaler Adresse ab. Der QR steht rechtsbündig im 420 Punkte breiten Druckbereich des TM-m10. Links stehen Uhrzeit und Terminart in der bisherigen großen Druckerschrift. Lange Terminarten werden umgebrochen; der QR wird dabei weder gestaucht noch angeschnitten.
 
 ```text
 Do. 17.09.2026

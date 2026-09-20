@@ -20,9 +20,9 @@ Stand: Version 1.3, 20. September 2026. Die automatisierten Tests verwenden auss
 - Python-3.10-Syntax aller Programmmodule und 16 Parser-Tests mit einem echten Python-3.10-Interpreter geprüft.
 - Shell-Syntax, CLI-Selbsttest und Git-Diff auf Formatfehler geprüft.
 
-Für den vorherigen Stand: Der [Linux-Integrationstest vom 20. September 2026](https://github.com/thomaskien/t2med-terminzettel/actions/runs/35507916575) ist erfolgreich: Installation, Update, Text-PDF, PostScript und Bild-PDF mit echter OCR über IPP/CUPS, fertiger ESC/POS-Bon mit großer Schrift, Hinweistext und einem kleinen QR je Termin (einschließlich fünf Codes in einem Auftrag), Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Die vorhandene Zielwarteschlange bleibt erhalten. Der Test läuft mit aktivem AppArmor; der Installer ergänzt gegebenenfalls die benötigten Regeln für den RAM-Zwischenspeicher. Beide PPDs bestehen `cupstestppd`.
+Der [Linux-Integrationstest für Version 1.3 vom 20. September 2026](https://github.com/thomaskien/t2med-terminzettel/actions/runs/35511962514) ist erfolgreich: Installation, Update, Text-PDF, PostScript und Bild-PDF mit echter OCR über IPP/CUPS, fertiger ESC/POS-Bon mit großer Schrift, Hinweistext, links Uhrzeit/Terminart und rechts einem kleinen QR je Termin (einschließlich fünf Codes in einem Auftrag), Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Die vorhandene Zielwarteschlange bleibt erhalten. Der Test läuft mit aktivem AppArmor; der Installer ergänzt gegebenenfalls die benötigten Regeln für den RAM-Zwischenspeicher. Beide PPDs bestehen `cupstestppd`.
 
-Im selben GitHub-Actions-Lauf wurden alle 136 Tests sowohl unter Python 3.10 als auch unter Python 3.13 ausgeführt: jeweils 135 bestanden, nur der ausschließlich unter macOS verfügbare Filtertest wurde übersprungen. Enthalten sind echte OCR mit dem deutschen Sprachpaket, PostScript-Konvertierung und ein mit dem macOS-Treiber „Generic PostScript Printer“ erzeugter Musterzettel. Auch die sichtbare sichere Fehlermeldung nach einer abgewiesenen Eingabe ist mit laufendem CUPS geprüft. Weitere Ausführungen sind im Repository unter **Actions** sichtbar.
+Im selben GitHub-Actions-Lauf wurden alle 144 Tests sowohl unter Python 3.10 als auch unter Python 3.13 ausgeführt: jeweils 143 bestanden, nur der ausschließlich unter macOS verfügbare Filtertest wurde übersprungen. Enthalten sind echte OCR mit dem deutschen Sprachpaket, PostScript-Konvertierung und ein mit dem macOS-Treiber „Generic PostScript Printer“ erzeugter Musterzettel. Auch die sichtbare sichere Fehlermeldung nach einer abgewiesenen Eingabe ist mit laufendem CUPS geprüft. Weitere Ausführungen sind im Repository unter **Actions** sichtbar.
 
 ## Lokaler Abgleich des T2med-Druckwegs
 
@@ -34,9 +34,9 @@ Kurzer Titel „Praxis ABC: Lufu“, 15 Minuten Dauer, Fehlerkorrektur M, vier R
 
 | Termine auf dem Bon | QR-Codes | Größe je Code | Inhalt je Code |
 | --- | --- | --- | --- |
-| 1 | 1 | 219 × 219 Punkte | Genau ein Termin |
-| 2 | 2 | Je 219 × 219 Punkte | Jeweils der zugehörige Termin |
-| 5 | 5 | Je 219 × 219 Punkte | Jeweils der zugehörige Termin |
+| 1 | 1 | 207 × 207 Punkte | Genau ein Termin |
+| 2 | 2 | Je 207 × 207 Punkte | Jeweils der zugehörige Termin |
+| 5 | 5 | Je 207 × 207 Punkte | Jeweils der zugehörige Termin |
 
 Version 1.3 überträgt das Bild in 24 Punkte hohen ESC/POS-Spaltenstreifen im flüchtigen Seitenpuffer. Der letzte Streifen wird unten weiß aufgefüllt; die Bildbreite bleibt unverändert und endet am rechten Rand von 420 Punkten. Die vorherige Sammel-Ausgabe für fünf Termine war 363 × 363 Punkte groß; der Kalender enthielt alle Einträge, aber das getestete iPhone importierte nur den ersten.
 
