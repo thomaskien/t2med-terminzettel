@@ -121,11 +121,45 @@ def run_checked(args: list[str], *, input_bytes: bytes | None = None,
     return proc.stdout
 
 
+def extract_pdf_text(source: str, cfg: dict[str, Any], *, data: bytes | None = None,
+                     temp_dir: str | None = None) -> str:
+    text = run_checked(["pdftotext", "-layout", source, "-"],
+                       input_bytes=data, temp_dir=temp_dir).decode("utf-8", "strict")
+    if text.strip():
+        return text
+    if not cfg_bool(cfg.get("input", {}), "ocr_if_needed", True):
+        raise TicketError("Der Beleg enthält keinen auslesbaren Text; Texterkennung ist deaktiviert.")
+    # Nicht stillschweigend nur die erste Seite eines mehrseitigen Bild-PDF lesen.
+    info = run_checked(["pdfinfo", source], input_bytes=data, temp_dir=temp_dir)
+    if not re.search(rb"^Pages:\s+1\s*$", info, re.MULTILINE):
+        raise TicketError("Für die Texterkennung ist genau eine PDF-Seite erforderlich.")
+    try:
+        image = run_checked(["pdftoppm", "-f", "1", "-l", "1", "-singlefile",
+                             "-scale-to", "2500", "-gray", "-png", source],
+                            input_bytes=data, temp_dir=temp_dir)
+        # Die Textschicht erhält Spalten und Einrückungen für mehrzeilige Termintypen.
+        # Bild, Textschicht und Ergebnis werden ausschließlich per Pipe übergeben.
+        searchable = run_checked(["tesseract", "stdin", "stdout", "-l", "deu", "--psm", "6",
+                                  "-c", "tessedit_create_pdf=1", "-c", "textonly_pdf=1"],
+                                 input_bytes=image, temp_dir=temp_dir)
+        text = run_checked(["pdftotext", "-layout", "-", "-"],
+                           input_bytes=searchable, temp_dir=temp_dir).decode("utf-8", "strict")
+    except TicketError:
+        raise TicketError("Texterkennung fehlgeschlagen. Bitte Tesseract und das deutsche Sprachpaket prüfen.") from None
+    if not text.strip():
+        raise TicketError("Die Texterkennung hat keinen lesbaren Text gefunden.")
+    ticket = parse_t2med(text)
+    weekdays = tuple(WEEKDAYS.values())
+    if any(item.weekday != weekdays[item.dt.weekday()] for item in ticket.appointments):
+        raise TicketError("Texterkennung unplausibel: Wochentag und Datum stimmen nicht überein.")
+    return text
+
+
 def extract_text(data: bytes, cfg: dict[str, Any]) -> str:
     if len(data) > MAX_INPUT:
         raise TicketError("Der Beleg ist zu groß (höchstens 8 MiB).")
     if data.startswith(b"%PDF-"):
-        return run_checked(["pdftotext", "-layout", "-", "-"], input_bytes=data).decode("utf-8", "strict")
+        return extract_pdf_text("-", cfg, data=data)
     if data.startswith((b"%!PS", b"PK\x03\x04")):
         with tempfile.TemporaryDirectory(prefix="job-", dir=WORK) as td:
             # Der Bereinigungsdienst überspringt noch aktive Aufträge.
@@ -138,7 +172,7 @@ def extract_text(data: bytes, cfg: dict[str, Any]) -> str:
                                  "-sOutputFile=" + str(pdf), str(source)], temp_dir=td)
                 else:
                     run_checked(["gxps2pdf", str(source), str(pdf)], temp_dir=td)
-                return run_checked(["pdftotext", "-layout", str(pdf), "-"], temp_dir=td).decode("utf-8", "strict")
+                return extract_pdf_text(str(pdf), cfg, temp_dir=td)
     encoding = str(cfg.get("input", {}).get("text_encoding", "utf-8"))
     try:
         return data.decode(encoding, "strict")
@@ -184,6 +218,7 @@ def parse_t2med(text: str) -> ParsedTicket:
     type_column = 0
     for line in lines[header + 1:]:
         if not line.strip():
+            current = None  # Abgesetzte Praxisfußzeilen gehören nicht zum letzten Termin.
             continue
         match = APPOINTMENT_RE.fullmatch(line)
         if match:

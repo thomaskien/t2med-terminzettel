@@ -1,0 +1,54 @@
+*PPD-Adobe: "4.3"
+*FormatVersion: "4.3"
+*FileVersion: "1.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PCFileName: "TERMPDF.PPD"
+*Manufacturer: "T2med"
+*Product: "(Terminzettel PDF)"
+*ModelName: "T2med Terminzettel PDF"
+*ShortNickName: "Terminzettel PDF"
+*NickName: "T2med Terminzettel PDF"
+*PSVersion: "(3010.000) 0"
+*LanguageLevel: "3"
+*ColorDevice: False
+*DefaultColorSpace: Gray
+*FileSystem: False
+*Throughput: "1"
+*LandscapeOrientation: Plus90
+*TTRasterizer: Type42
+*cupsVersion: 1.1
+*cupsManualCopies: True
+*cupsMaxCopies: 99
+*% Native macOS PDF output: keep the text instead of converting to PostScript.
+*cupsFilter: "application/vnd.cups-pdf 0 -"
+*cupsFilter2: "application/pdf application/pdf 0 -"
+*cupsFilter2: "application/vnd.cups-pdf application/pdf 0 -"
+*OpenUI *PageSize/Original page size: PickOne
+*OrderDependency: 10 AnySetup *PageSize
+*DefaultPageSize: A6
+*PageSize A6/A6: "<</PageSize[298 420]>>setpagedevice"
+*PageSize A5/A5: "<</PageSize[420 595]>>setpagedevice"
+*PageSize A4/A4: "<</PageSize[595 842]>>setpagedevice"
+*PageSize Letter/US Letter: "<</PageSize[612 792]>>setpagedevice"
+*CloseUI: *PageSize
+*OpenUI *PageRegion/Original page region: PickOne
+*OrderDependency: 10 AnySetup *PageRegion
+*DefaultPageRegion: A6
+*PageRegion A6/A6: "<</PageSize[298 420]>>setpagedevice"
+*PageRegion A5/A5: "<</PageSize[420 595]>>setpagedevice"
+*PageRegion A4/A4: "<</PageSize[595 842]>>setpagedevice"
+*PageRegion Letter/US Letter: "<</PageSize[612 792]>>setpagedevice"
+*CloseUI: *PageRegion
+*DefaultImageableArea: A6
+*ImageableArea A6/A6: "18 18 280 402"
+*ImageableArea A5/A5: "18 18 402 577"
+*ImageableArea A4/A4: "18 18 577 824"
+*ImageableArea Letter/US Letter: "18 18 594 774"
+*DefaultPaperDimension: A6
+*PaperDimension A6/A6: "298 420"
+*PaperDimension A5/A5: "420 595"
+*PaperDimension A4/A4: "595 842"
+*PaperDimension Letter/US Letter: "612 792"
+*DefaultFont: Courier
+*Font Courier: Standard "(001.007)" Standard ROM

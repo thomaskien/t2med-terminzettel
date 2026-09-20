@@ -4,6 +4,8 @@
 [input]
 # Wird nur für bereits als Text angelieferte Jobs benötigt.
 text_encoding = "utf-8"
+# Bild-PDFs automatisch lokal mit Tesseract (Deutsch) lesen.
+ocr_if_needed = true
 
 [output]
 # Bereits vorhandene lokale CUPS-Warteschlange.

@@ -53,6 +53,7 @@ echo 'Installing and updating Terminzettel'
 run_installer
 run_installer
 cupstestppd "$SOURCE_DIR/terminzettel.ppd"
+cupstestppd "$SOURCE_DIR/../macos/Terminzettel-PDF.ppd"
 python3 -B - "$SOURCE_DIR" <<'PY'
 from pathlib import Path
 import subprocess
@@ -61,6 +62,7 @@ import time
 import cups
 sys.path.insert(0, sys.argv[1] + '/tests')
 from test_conversion import pdf_fixture, postscript_fixture
+from test_ocr import image_pdf_fixture
 conn = cups.Connection(host='127.0.0.1', port=631)
 attrs = conn.getPrinterAttributes('Terminzettel')
 assert attrs['printer-is-shared']
@@ -68,7 +70,7 @@ assert attrs['device-uri'] == 'terminzettel:/'
 assert 'application/pdf' in attrs['document-format-supported']
 assert 'application/postscript' in attrs['document-format-supported']
 destination = Path('/tmp/terminzettel-smoke-output')
-for suffix, data in (('pdf', pdf_fixture()), ('ps', postscript_fixture())):
+for suffix, data in (('pdf', pdf_fixture()), ('ps', postscript_fixture()), ('image.pdf', image_pdf_fixture())):
     destination.unlink(missing_ok=True)
     source = Path('/tmp/terminzettel-smoke.' + suffix)
     source.write_bytes(data)

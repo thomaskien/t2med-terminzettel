@@ -83,6 +83,7 @@ PreserveJobFiles No
 
 def migrate_config(text: str, defaults: dict | None = None) -> str:
     cfg = tomllib.loads(text)
+    cfg.setdefault("input", {}).setdefault("ocr_if_needed", True)
     if defaults and "calendar_qr" not in cfg:
         cfg["calendar_qr"] = defaults["calendar_qr"]
     output = cfg.setdefault("output", {})

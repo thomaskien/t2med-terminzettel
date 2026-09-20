@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install conversion tools
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils ghostscript libgxps-utils
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils ghostscript libgxps-utils tesseract-ocr tesseract-ocr-deu
       - name: Install test dependencies
         run: python -m pip install -r terminzettel-installer/requirements-dev.txt
       - name: Shell syntax
@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install CUPS, Samba and conversion tools
-        run: sudo apt-get update && sudo apt-get install -y cups samba python3-cups python3-tomli python3-qrcode python3-pil tzdata poppler-utils ghostscript libgxps-utils avahi-daemon avahi-utils
+        run: sudo apt-get update && sudo apt-get install -y cups samba python3-cups python3-tomli python3-qrcode python3-pil tzdata poppler-utils ghostscript libgxps-utils tesseract-ocr tesseract-ocr-deu avahi-daemon avahi-utils
       - name: Real CUPS and Bonjour with a synthetic printer
         run: |
           set -o pipefail

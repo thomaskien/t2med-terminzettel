@@ -1,6 +1,6 @@
 # T2med-Terminzettel
 
-In T2med **Terminzettel** als Drucker auswählen. Der Dienst druckt einen 58-mm-Bon über die vorhandene lokale CUPS-Warteschlange **TMm10**. Auf Wunsch ergänzt er einen Offline-Kalender-QR für alle Termine.
+In T2med **Terminzettel** als Drucker auswählen. Der Dienst druckt einen 58-mm-Bon über die vorhandene lokale CUPS-Warteschlange **TMm10**. Bild-PDFs aus T2med liest er bei Bedarf automatisch mit der lokal installierten Texterkennung. Auf Wunsch ergänzt er einen Offline-Kalender-QR für alle Termine.
 
 ## Installation auf dem Raspberry Pi
 
@@ -20,7 +20,7 @@ cd t2med-terminzettel-main/terminzettel-installer
 sudo ./install-terminzettel.sh
 ```
 
-Falls `curl` fehlt: `sudo apt-get update && sudo apt-get install -y curl`. Die übrigen benötigten Pakete installiert das Skript selbst. Download und Paketinstallation benötigen Internet; der spätere Kalender-QR funktioniert offline. Wer bereits als `root` angemeldet ist, kann `sudo` weglassen.
+Falls `curl` fehlt: `sudo apt-get update && sudo apt-get install -y curl`. Die übrigen benötigten Pakete installiert das Skript selbst, einschließlich Tesseract mit deutschem Sprachpaket. Eine vorhandene Tesseract-Installation (zum Beispiel durch kienzlefax) wird mitbenutzt; deren Konfiguration wird nicht verändert. Download und Paketinstallation benötigen Internet; der spätere Kalender-QR funktioniert offline. Wer bereits als `root` angemeldet ist, kann `sudo` weglassen.
 
 Ist das Projekt bereits entpackt, im Unterordner `terminzettel-installer` einfach `sudo ./install-terminzettel.sh` ausführen.
 
@@ -41,16 +41,26 @@ Auch nach dem früheren Abbruch mit „cgroup v2 und Speichercontroller erforder
 
 ### Drucker auf dem Mac hinzufügen
 
-Der Installer richtet **Terminzettel** als freigegebene CUPS-Warteschlange ein. Damit wird er über die vorhandene Bonjour-Druckerfreigabe der kienzlebox angekündigt, genauso wie `TMm10` und die Faxdrucker.
+Der Raspberry Pi gibt **Terminzettel** über CUPS und Bonjour frei. Auf dem Mac den mitgelieferten **PDF-Treiber** verwenden: Er reicht eingehende PDFs ohne zusätzliche Umwandlung weiter. Falls T2med bereits ein Bild-PDF liefert, übernimmt die lokale Texterkennung auf dem Raspberry Pi das Lesen der Termine. Der Treiber allein macht aus einem Bild noch keinen Text.
 
-1. **Systemeinstellungen → Drucker & Scanner → Drucker hinzufügen** öffnen.
-2. Unter **Default / Standard** den Eintrag **Terminzettel @ kienzlebox** auswählen (der angezeigte Rechnername kann abweichen).
-3. Die angebotene **T2med Terminzettel**-Software verwenden. Falls sie nicht automatisch gewählt wird, **Generic PostScript Printer** auswählen und hinzufügen.
-4. In T2med diesen Drucker **Terminzettel** für das Terminblatt auswählen.
+1. Den [Mac-PDF-Treiber herunterladen](https://raw.githubusercontent.com/thomaskien/t2med-terminzettel/main/macos/Terminzettel-PDF.ppd) und als `Terminzettel-PDF.ppd` im Ordner Downloads speichern.
+2. **Systemeinstellungen → Drucker & Scanner → Drucker hinzufügen** öffnen.
+3. Unter **Default / Standard** den Eintrag **Terminzettel @ kienzlebox** auswählen (der Rechnername kann abweichen).
+4. Bei **Verwenden → Andere …** die heruntergeladene Datei `Terminzettel-PDF.ppd` auswählen und den Drucker hinzufügen.
+5. In T2med den Druckdialog neu öffnen und **Terminzettel** auswählen.
 
-`Terminzettel` erzeugt den Bon einschließlich Kalender-QR und druckt ihn anschließend über die vorhandene Warteschlange `TMm10`. Als Eingangsformat bleibt die normale Seite des Terminblatts eingestellt, zum Beispiel A4. Das Bonformat entsteht erst auf dem Raspberry Pi.
+**Bereits als „Generic PostScript Printer“ eingerichtet?** Auf dem **Mac**, nicht auf dem Raspberry Pi, genügen diese Befehle:
 
-**Falls der Eintrag nicht automatisch erscheint:** Im Dialog **IP** wählen, Adresse `kienzlebox.local` (alternativ die IP-Adresse), Protokoll **Internet Printing Protocol – IPP**, Warteliste **printers/Terminzettel**, Name **Terminzettel**, Verwenden **Generic PostScript Printer**. Der vollständige Anschluss lautet `ipp://kienzlebox.local:631/printers/Terminzettel`.
+```bash
+curl -fL https://raw.githubusercontent.com/thomaskien/t2med-terminzettel/main/macos/Terminzettel-PDF.ppd -o "$HOME/Downloads/Terminzettel-PDF.ppd" &&
+sudo /usr/sbin/lpadmin -p Terminzettel -P "$HOME/Downloads/Terminzettel-PDF.ppd"
+```
+
+Der Anschluss des vorhandenen Druckers bleibt erhalten. Danach den Druckdialog in T2med schließen und neu öffnen. Der Treiber heißt nun **T2med Terminzettel PDF**. Falls der Mac-Drucker einen anderen internen Namen hat, diesen bei `-p` einsetzen; `lpstat -v` zeigt die Namen an.
+
+`Terminzettel` erzeugt auf dem Raspberry Pi den Bon einschließlich Kalender-QR und druckt ihn über `TMm10`. Das Eingangsformat bleibt das Format des Terminblatts: A6 ist voreingestellt, A5, A4 und Letter sind ebenfalls möglich. Das Bonformat entsteht erst auf dem Raspberry Pi.
+
+**Falls der Bonjour-Eintrag nicht erscheint:** Im Dialog **IP** wählen, Adresse `kienzlebox.local` (alternativ die IP-Adresse), Protokoll **Internet Printing Protocol – IPP**, Warteliste **printers/Terminzettel**, Name **Terminzettel**. Bei **Verwenden → Andere …** ebenfalls den PDF-Treiber auswählen. Der vollständige Anschluss lautet `ipp://kienzlebox.local:631/printers/Terminzettel`.
 
 Voraussetzung ist die bereits eingerichtete CUPS-Netzwerkfreigabe auf dem Raspberry Pi. Sind andere CUPS-Drucker wie `TMm10` bereits als Bonjour-Drucker sichtbar, ist sie vorhanden. Der Installer ergänzt die neue Warteschlange und installiert Avahi für Bonjour. Er verändert weder die Netzwerkzugriffsregeln noch die Anschlussadressen der bestehenden Drucker. Hintergrund: [CUPS-Druckerfreigabe und Bonjour](https://www.cups.org/doc/sharing.html).
 
@@ -87,7 +97,7 @@ lpstat -p TMm10 -l
 
 Bei `Terminzettel` steht die konkrete feste Fehlermeldung, zum Beispiel zur Dateiumwandlung, zum fehlenden Tabellenkopf oder zur CUPS-Ausgabe. Patientenname und Beleginhalt werden nicht ausgegeben. Bei älteren Versionen erscheint nur „Terminzettel konnte nicht verarbeitet werden“: aktualisieren, den Termin erneut drucken und den Status nochmals abfragen.
 
-Das Terminblatt muss als PDF oder PostScript mit lesbarem Text ankommen. Eine gewöhnliche Drucker-Testseite enthält keine T2med-Termine und wird deshalb abgewiesen. `terminzettel-submit --self-test` prüft nur das Programm und druckt keinen Bon.
+Das Terminblatt kann als Text-PDF oder als Bild-PDF ankommen. Bild-PDFs werden automatisch mit Tesseract (Deutsch) gelesen; das gilt auch für nach PDF umgewandelte PostScript-/XPS-Aufträge. Für OCR wird genau eine PDF-Seite erwartet. Bei älteren Versionen führte ein Bild-PDF zur Meldung „Genau eine nichtleere Seite erforderlich“; dann das Projekt aktualisieren. Eine gewöhnliche Drucker-Testseite enthält keine T2med-Termine und wird deshalb abgewiesen. `terminzettel-submit --self-test` prüft nur das Programm und druckt keinen Bon.
 
 ## Konfiguration
 
@@ -120,6 +130,20 @@ Mit `enabled = false` lässt sich der jeweilige Block abschalten. Standardziel:
 queue = "TMm10"
 format = "escpos"
 ```
+
+### Automatische Texterkennung
+
+Standardmäßig aktiv, auch beim Update einer älteren Konfiguration:
+
+```toml
+[input]
+text_encoding = "utf-8"
+ocr_if_needed = true
+```
+
+Die vorhandene Tesseract-Installation wird nur aufgerufen, wenn das PDF keinen auslesbaren Text enthält. Bild und erkannter Text werden im Arbeitsspeicher verarbeitet; es gibt keine OCR-Dateiablage. Tabellenanordnung und Einrückungen bleiben für die Terminverarbeitung erhalten. Die Umsetzung nutzt die [lokale PDF-Textausgabe von Tesseract](https://tesseract-ocr.github.io/tessdoc/Command-Line-Usage.html).
+
+Mit `ocr_if_needed = false` lässt sich OCR abschalten. Fehlerhafte Termine sowie ein Widerspruch zwischen Wochentag und Datum werden abgewiesen. OCR kann dennoch Zeichen falsch erkennen; die ersten Bons bitte mit dem Terminblatt vergleichen.
 
 ### Kalender-QR
 

@@ -1,10 +1,13 @@
 # Teststatus
 
-Stand: 19. September 2026. Die Software ist für den Gerätetest vorbereitet; eine Produktivfreigabe am Raspberry Pi und Drucker steht noch aus. Alle Testdaten sind künstlich.
+Stand: 20. September 2026. Die automatisierten Tests verwenden ausschließlich künstliche Daten. Der direkte PDF-Druck am vorgesehenen TM-m10 wurde vom Benutzer bestätigt; der normale T2med-Druck mit der neuen OCR-Verarbeitung muss nach dem Update auf dem Raspberry Pi noch bestätigt werden.
 
 ## Automatisiert geprüft
 
-- 102 Tests lokal unter Python 3.14 mit CUPS-Eingang und ohne cgroup-/Swap-Sperre: 100 bestanden, zwei PostScript-Integrationstests übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
+- 114 Tests lokal unter Python 3.14 mit CUPS-Eingang und ohne cgroup-/Swap-Sperre: 112 bestanden, zwei PostScript-Integrationstests übersprungen, weil das lokal installierte Ghostscript nicht ausführbar ist.
+- Echte lokale OCR mit Tesseract und deutschem Sprachmodell: Bild-PDF ohne Textschicht, ein und fünf Termine, mehrzeiliger Termintyp und abgesetzter Praxisfuß. Ergebnis mit der Text-PDF verglichen; keine Arbeitsdateien zurückgelassen.
+- OCR-Abschaltung, Seitenbegrenzung, fehlende Abhängigkeit, leeres Ergebnis und Wochentag-/Datumswiderspruch getestet. Konfigurationsupdates aktivieren OCR, erhalten aber ein ausdrücklich gesetztes `false`.
+- Mac-PDF-Treiber mit `cupstestppd` und beiden PDF-MIME-Typen ohne zusätzlichen Konvertierungsfilter geprüft.
 - Echte PDF-Textextraktion mit Poppler; PostScript-Fehlerbehandlung und Aufräumen separat getestet.
 - Einseitige T2med-Erkennung, mehrzeilige Beschreibungen, Sortierung, Duplikate und Ablehnung beschädigter Terminzeilen.
 - Konkrete feste CUPS-Fehlermeldungen für Verarbeitung, Konfiguration und Ausgabe; fremde Fehlertexte, Benutzernamen und Dokumenttitel bleiben unterdrückt.
@@ -18,6 +21,10 @@ Stand: 19. September 2026. Die Software ist für den Gerätetest vorbereitet; ei
 Der [Linux-Integrationstest vom 19. September 2026](https://github.com/thomaskien/t2med-terminzettel/actions/runs/35471669091) ist erfolgreich: Installation, Update, PDF und PostScript über IPP/CUPS, fertiger ESC/POS-Bon mit QR, Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Die vorhandene Zielwarteschlange bleibt erhalten. Der Test läuft mit aktivem AppArmor; der Installer ergänzt gegebenenfalls die benötigten Regeln für den RAM-Zwischenspeicher. Die PPD besteht `cupstestppd`.
 
 Im selben GitHub-Actions-Lauf bestanden alle 102 Tests sowohl unter Python 3.10 als auch unter Python 3.13 mit Poppler und Ghostscript, einschließlich der echten PostScript-Konvertierung und eines mit dem macOS-Treiber „Generic PostScript Printer“ erzeugten Musterzettels. Auch die sichtbare sichere Fehlermeldung nach einer abgewiesenen Eingabe ist mit laufendem CUPS geprüft. Weitere Ausführungen sind im Repository unter **Actions** sichtbar.
+
+## Lokaler Abgleich des T2med-Druckwegs
+
+Die gespeicherte Original-PDF enthält auslesbaren Text. Die untersuchten Mac-Druckaufträge enthalten dagegen nur ein Bild. Der neue OCR-Weg wurde ausschließlich lokal und im Arbeitsspeicher an einem solchen Auftrag geprüft: Patientenname, alle fünf Daten, Uhrzeiten, Wochentage und Termintypen stimmen mit der Original-PDF überein. Die zugehörigen Belegdaten sind weder im Repository noch in GitHub Actions enthalten. Dieser Vergleich ersetzt noch nicht den abschließenden Drucktest nach dem Update auf dem Raspberry Pi.
 
 ## Gemessene QR-Größen
 

@@ -45,6 +45,11 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("password", result["output"])
         self.assertNotIn("debug", result)
         self.assertEqual(result["header"], {"text": "Praxis\nTelefon", "enabled": False})
+        self.assertTrue(result["input"]["ocr_if_needed"])
+
+    def test_disabled_ocr_is_preserved_on_update(self):
+        result = cfg.tomllib.loads(cfg.migrate_config('[input]\nocr_if_needed=false\n'))
+        self.assertFalse(result["input"]["ocr_if_needed"])
 
     def test_remote_output_is_not_silently_redirected(self):
         with self.assertRaises(ValueError):

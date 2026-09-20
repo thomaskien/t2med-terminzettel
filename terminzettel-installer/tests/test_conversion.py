@@ -8,8 +8,8 @@ from unittest.mock import patch
 from test_runtime import app
 
 
-def pdf_fixture():
-    content = (b"BT /F1 11 Tf 50 780 Td (TERMINE) Tj 0 -20 Td "
+def pdf_fixture(content=None):
+    content = content or (b"BT /F1 11 Tf 50 780 Td (TERMINE) Tj 0 -20 Td "
                b"(Testperson Alpha) Tj 0 -20 Td (Terminzeitpunkt              Termintyp) Tj "
                b"0 -20 Td (Do. 17.09.2026, 09:00 Kontrolle) Tj ET\n")
     objects = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",

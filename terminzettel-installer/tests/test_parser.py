@@ -37,6 +37,10 @@ class ParserTests(unittest.TestCase):
         ticket = app.parse_t2med(document(ROW + "\nBitte Karte mitbringen.\n    Telefonnummer 12345"))
         self.assertEqual(ticket.appointments[0].kind, "Kontrolle")
 
+    def test_centered_footer_after_gap_not_in_type(self):
+        ticket = app.parse_t2med(document(ROW + "\n\n" + " " * 32 + "Praxis Beispiel"))
+        self.assertEqual(ticket.appointments[0].kind, "Kontrolle")
+
     def test_missing_type_rejected_even_after_valid_row(self):
         with self.assertRaises(ValueError):
             app.parse_t2med(document(ROW + "\nFr. 18.09.2026, 10:00"))
