@@ -1,7 +1,12 @@
 import contextlib
 import io
+from pathlib import Path
+import sys
 import unittest
 from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from escpos_test_utils import decode_pages, decode_standard_lines
 from test_installer import installer, cfg
 from test_runtime import app, TEXT
 
@@ -17,7 +22,7 @@ class ReceiptSetupTests(unittest.TestCase):
         self.assertTrue(result['header']['enabled'])
         self.assertTrue(result['calendar_qr']['enabled'])
         self.assertEqual(result['calendar_qr']['summary'], 'Termin Arztpraxis')
-        self.assertEqual(result['calendar_qr']['caption'], 'Termin speichern')
+        self.assertNotIn('caption', result['calendar_qr'])
         self.assertEqual(result['calendar_qr']['max_width_dots'], 256)
         self.assertTrue(result['footer']['enabled'])
         self.assertEqual(result['footer']['text'], 'Können Sie einen Termin nicht wahrnehmen, sagen Sie bitte unbedingt Bescheid.')
@@ -46,14 +51,19 @@ class ReceiptSetupTests(unittest.TestCase):
         result = self.configure({'calendar_qr': {'enabled': True, 'max_width_dots': 375}}, ['n', '', '', 'n'])
         self.assertEqual(result['calendar_qr']['max_width_dots'], 375)
 
-    def test_custom_calendar_title_is_saved(self):
+    def test_custom_calendar_prefix_is_saved(self):
         result = self.configure({'calendar_qr': {'enabled': True}}, ['n', '', 'Nachkontrolle Praxis', 'n'])
         self.assertEqual(result['calendar_qr']['summary'], 'Nachkontrolle Praxis')
 
-    def test_enter_keeps_existing_calendar_title(self):
+    def test_enter_keeps_existing_calendar_prefix(self):
         original = {'calendar_qr': {'enabled': True, 'summary': 'Bestehender Kalendername'}}
         result = self.configure(original, ['n', '', '', 'n'])
         self.assertEqual(result['calendar_qr']['summary'], 'Bestehender Kalendername')
+
+    def test_dash_clears_calendar_prefix(self):
+        original = {'calendar_qr': {'enabled': True, 'summary': 'Bestehender Kalendername'}}
+        result = self.configure(original, ['n', '', '-', 'n'])
+        self.assertEqual(result['calendar_qr']['summary'], '')
 
     def test_disabled_qr_does_not_ask_for_calendar_title(self):
         original = {'calendar_qr': {'enabled': False, 'summary': 'Bleibt erhalten'}}
@@ -89,33 +99,6 @@ class ReceiptSetupTests(unittest.TestCase):
         ask.assert_not_called()
 
 
-def decode_lines(raw):
-    """Read printer text and character-size commands, skipping the QR raster."""
-    lines, text, size, pos = [], bytearray(), 0, 0
-    while pos < len(raw):
-        if raw[pos:pos+4] == b'\x1dv0\x00':
-            width = int.from_bytes(raw[pos+4:pos+6], 'little')
-            rows = int.from_bytes(raw[pos+6:pos+8], 'little')
-            pos += 8 + width * rows
-        elif raw[pos:pos+2] == b'\x1d!':
-            size = raw[pos+2]
-            pos += 3
-        elif raw[pos:pos+2] == b'\x1b@':
-            size = 0
-            pos += 2
-        elif raw[pos] in (0x1b, 0x1d):
-            pos += 3
-        elif raw[pos] == 10:
-            if text:
-                lines.append((text.decode('cp858'), size))
-                text.clear()
-            pos += 1
-        else:
-            text.append(raw[pos])
-            pos += 1
-    return lines, size
-
-
 class ReceiptLayoutTests(unittest.TestCase):
     def config(self):
         return {'header': {'enabled': True, 'text': 'Praxis Beispiel'},
@@ -124,30 +107,46 @@ class ReceiptLayoutTests(unittest.TestCase):
 
     def test_all_text_is_double_height_and_width_and_keeps_case(self):
         raw = app.render(app.parse_t2med(TEXT), self.config())
-        lines, ending_height = decode_lines(raw)
+        lines, ending_height = decode_standard_lines(raw)
+        pages = decode_pages(raw)
         self.assertTrue(all(size == 0x11 for text, size in lines))
+        self.assertEqual(len(pages), 1)
+        self.assertTrue(all(text.size == 0x11 for text in pages[0].texts))
         self.assertIn(('Praxis Beispiel', 0x11), lines)
         self.assertIn(('Testperson Alpha', 0x11), lines)
-        self.assertIn(('09:00  Kontrolle', 0x11), lines)
+        self.assertEqual([text.data.decode('cp858') for text in pages[0].texts],
+                         ['09:00', 'Kontrol', 'le'])
         self.assertIn(('Bitte unbedingt', 0x11), lines)
         self.assertIn(('Bescheid sagen.', 0x11), lines)
         self.assertTrue(all(len(text) <= 17 for text, size in lines))
         self.assertFalse(ending_height)
         self.assertLess(raw.index(b'Praxis Beispiel'), raw.index(b'IHRE TERMINE'))
-        self.assertLess(raw.index(b'Kontrolle'), raw.index(b'\x1dv0\x00'))
-        self.assertLess(raw.index(b'\x1dv0\x00'), raw.index(b'Bitte unbedingt'))
+        self.assertLess(raw.index(b'Do. 17.09.2026'), pages[0].start)
+        self.assertLess(pages[0].end, raw.index(b'Bitte unbedingt'))
 
     def test_normal_height_can_be_restored_in_toml(self):
         config = self.config()
         config['layout'] = {'double_height': False, 'double_width': False, 'heading_double_height': False}
-        lines, ending_height = decode_lines(app.render(app.parse_t2med(TEXT), config))
+        raw = app.render(app.parse_t2med(TEXT), config)
+        lines, ending_height = decode_standard_lines(raw)
         self.assertTrue(all(not height for text, height in lines))
+        self.assertTrue(all(not text.size for page in decode_pages(raw) for text in page.texts))
         self.assertFalse(ending_height)
 
     def test_qr_only_receipt_resets_size_before_cut(self):
-        lines, ending_height = decode_lines(app.render(app.parse_t2med(TEXT), {'calendar_qr': {'enabled': True}}))
+        raw = app.render(app.parse_t2med(TEXT), {'calendar_qr': {'enabled': True}})
+        lines, ending_height = decode_standard_lines(raw)
         self.assertTrue(all(size == 0x11 for text, size in lines))
+        self.assertTrue(all(text.size == 0x11 for page in decode_pages(raw) for text in page.texts))
         self.assertFalse(ending_height)
+        self.assertTrue(raw.endswith(b'\n\n\n\n\x1dV\x01'))
+
+    def test_legacy_custom_caption_is_never_printed(self):
+        caption = 'Benutzerdefinierte Beschriftung'
+        raw = app.render(app.parse_t2med(TEXT), {
+            'calendar_qr': {'enabled': True, 'caption': caption},
+        })
+        self.assertNotIn(caption.encode('cp858'), raw)
 
 
 if __name__ == '__main__':

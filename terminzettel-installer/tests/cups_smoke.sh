@@ -62,6 +62,7 @@ import time
 import cups
 sys.path.insert(0, sys.argv[1] + '/tests')
 from test_conversion import pdf_fixture, postscript_fixture
+from escpos_test_utils import decode_pages
 from test_ocr import image_pdf_fixture
 conn = cups.Connection(host='127.0.0.1', port=631)
 attrs = conn.getPrinterAttributes('Terminzettel')
@@ -89,17 +90,19 @@ for suffix, data in (('pdf', pdf_fixture()), ('ps', postscript_fixture()), ('ima
     assert b'Testperson Alpha' in data
     assert b'\x1d!\x11' in data, 'Double width/height missing'
     assert 'Können Sie einen'.encode('cp858') in data, 'Reminder missing'
-    count, position = 0, 0
-    while True:
-        offset = data.find(b'\x1dv0\x00', position)
-        if offset < 0:
-            break
-        width = int.from_bytes(data[offset + 4:offset + 6], 'little')
-        height = int.from_bytes(data[offset + 6:offset + 8], 'little')
-        assert 0 < width * 8 <= 256 and 0 < height <= 256, 'QR is not compact'
-        position = offset + 8 + width * height
-        count += 1
-    assert count == (5 if suffix == 'multi.pdf' else 1), 'One QR per appointment required'
+    pages = decode_pages(data)
+    assert len(pages) == (5 if suffix == 'multi.pdf' else 1), 'One QR page per appointment required'
+    assert b'\x1dv0\x00' not in data, 'Obsolete standard-mode raster command found'
+    assert b'Termin speichern' not in data, 'QR caption must not be printed'
+    for page in pages:
+        assert page.width == 420 and 0 < page.height <= 2400, 'Invalid page area'
+        assert page.bands and page.bands[0].x + page.bands[0].width == 420, 'QR is not right aligned'
+        assert 0 < page.bands[0].width <= 256, 'QR is not compact'
+        assert all(band.mode == 33 and len(band.data) == band.width * 3 for band in page.bands)
+        assert [text.size for text in page.texts] == [0x11] * len(page.texts), 'Page text is not large'
+        assert page.texts[0].data == b'09:00', 'Appointment time missing from page row'
+        assert b''.join(text.data for text in page.texts[1:]).replace(b' ', b'') == b'Kontrolle'
+        assert data[page.end - 1:page.end + 7] == b'\x0c\x1d!\x00\x1dP\x00\x00', 'Page mode not reset'
     assert data.endswith(b'\x1dV\x01'), 'Cut missing'
     assert not conn.getJobs(which_jobs='not-completed'), 'Jobs did not finish'
     print(suffix + ' -> IPP/CUPS -> Terminzettel -> ESC/POS + QR -> TMm10: OK', flush=True)

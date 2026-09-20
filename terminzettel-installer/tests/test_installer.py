@@ -57,17 +57,24 @@ class ConfigTests(unittest.TestCase):
         result = cfg.tomllib.loads(cfg.migrate_config('[input]\nocr_if_needed=false\n'))
         self.assertFalse(result["input"]["ocr_if_needed"])
 
-    def test_old_calendar_caption_and_widths_are_migrated(self):
+    def test_only_explicit_old_aggregate_caption_migrates_old_width(self):
         for width in (360, 384):
-            for caption in (None, "Alle Termine in Kalender übernehmen"):
-                with self.subTest(width=width, caption=caption):
-                    calendar = {"enabled": False, "max_width_dots": width}
-                    if caption is not None:
-                        calendar["caption"] = caption
-                    result = self.migrated_calendar(calendar)
-                    self.assertFalse(result["enabled"])
-                    self.assertEqual(result["caption"], "Termin speichern")
-                    self.assertEqual(result["max_width_dots"], 256)
+            with self.subTest(width=width):
+                result = self.migrated_calendar({
+                    "enabled": False,
+                    "caption": "Alle Termine in Kalender übernehmen",
+                    "max_width_dots": width,
+                })
+                self.assertFalse(result["enabled"])
+                self.assertNotIn("caption", result)
+                self.assertEqual(result["max_width_dots"], 256)
+
+    def test_missing_old_caption_cannot_trigger_width_migration(self):
+        for width in (360, 384):
+            with self.subTest(width=width):
+                result = self.migrated_calendar({"enabled": False, "max_width_dots": width})
+                self.assertNotIn("caption", result)
+                self.assertEqual(result["max_width_dots"], width)
 
     def test_calendar_migration_preserves_custom_values(self):
         custom = self.migrated_calendar({
@@ -81,22 +88,22 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(custom, {
             "enabled": False,
             "summary": "Eigener Kalendername",
-            "caption": "Eigene Beschriftung",
             "max_width_dots": 384,
             "include_location": True,
             "location": "Beispielweg 1",
         })
         other_width = self.migrated_calendar({"caption": "Alle Termine in Kalender übernehmen",
                                               "max_width_dots": 375})
-        self.assertEqual(other_width["caption"], "Termin speichern")
+        self.assertNotIn("caption", other_width)
         self.assertEqual(other_width["max_width_dots"], 375)
 
     def test_calendar_migration_is_repeatable_and_keeps_later_width_change(self):
         first = cfg.migrate_config(cfg.dump_config({
-            "calendar_qr": {"enabled": True, "max_width_dots": 384},
+            "calendar_qr": {"enabled": True, "caption": "Alle Termine in Kalender übernehmen",
+                            "max_width_dots": 384},
         }))
         first_values = cfg.tomllib.loads(first)
-        self.assertEqual(first_values["calendar_qr"]["caption"], "Termin speichern")
+        self.assertNotIn("caption", first_values["calendar_qr"])
         self.assertEqual(first_values["calendar_qr"]["max_width_dots"], 256)
         self.assertEqual(cfg.migrate_config(first), first)
 
@@ -115,7 +122,7 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(result["input"]["ocr_if_needed"])
         self.assertEqual(result["header"], {"enabled": False, "text": "Praxis Beispiel\nTelefon 123"})
         self.assertEqual(result["footer"], {"enabled": False, "text": "Eigener Hinweis"})
-        self.assertEqual(result["calendar_qr"]["caption"], "Termin speichern")
+        self.assertNotIn("caption", result["calendar_qr"])
         self.assertEqual(result["calendar_qr"]["max_width_dots"], 256)
 
     def test_remote_output_is_not_silently_redirected(self):

@@ -1,4 +1,4 @@
-"""Offline-Kalender und QR: nur Zeiten und feste Praxisangaben, keine Patientendaten."""
+"""Offline-Kalender und QR: Terminzeiten und Titel, ohne Patientenname."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,6 +16,15 @@ class PayloadTooLarge(ValueError):
 class CalendarAppointment:
     start: datetime
     end: datetime | None = None
+
+
+def appointment_summary(prefix: str, kind: str) -> str:
+    """Fester Praxis-Präfix plus Terminart; ein leerer Präfix ist zulässig."""
+    if not isinstance(prefix, str) or not isinstance(kind, str):
+        raise ValueError("invalid calendar configuration")
+    prefix = prefix.strip().rstrip(":").rstrip()
+    kind = " ".join(kind.split())
+    return f"{prefix}: {kind}" if prefix and kind else prefix or kind
 
 
 def utc_time(value: datetime, zone: ZoneInfo) -> datetime:

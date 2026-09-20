@@ -166,10 +166,11 @@ def ask_text(label: str, current: str) -> str:
 
 def ask_calendar_title(current: str) -> str:
     while True:
-        title = input("Terminname im Kalender [" + current + "]: ").strip() or current
-        if title and not any(ord(char) < 32 or 127 <= ord(char) < 160 for char in title):
+        answer = input("Kalender-Präfix (z. B. Praxis ABC; - für keinen) [" + current + "]: ").strip()
+        title = "" if answer == "-" else answer or current
+        if not any(ord(char) < 32 or 127 <= ord(char) < 160 for char in title):
             return title
-        print("Bitte einen Terminnamen ohne Steuerzeichen eingeben.")
+        print("Bitte einen Präfix ohne Steuerzeichen eingeben.")
 
 
 def configure_receipt(text: str) -> str:
@@ -177,7 +178,7 @@ def configure_receipt(text: str) -> str:
         return text
     cfg = tomllib.loads(text)
     defaults = tomllib.loads((SOURCE / "config.toml").read_text())
-    print("\nBon einrichten: Kopf → Termine mit je einem QR → Fußtext.")
+    print("\nBon einrichten (Version 1.3): Kopf → Termine links, QR rechts → Fußtext.")
     print("Alle Angaben bleiben in /etc/terminzettel/config.toml änderbar.")
     try:
         header = cfg.setdefault("header", dict(defaults["header"]))
@@ -185,7 +186,7 @@ def configure_receipt(text: str) -> str:
         if header["enabled"]:
             header["text"] = ask_text("Praxiskopf (z. B. Name, Adresse, Telefon)", header.get("text", ""))
         calendar = cfg.setdefault("calendar_qr", dict(defaults["calendar_qr"]))
-        calendar["enabled"] = ask_enabled("Einen kleinen Kalender-QR unter jedem Termin drucken?", calendar.get("enabled", True))
+        calendar["enabled"] = ask_enabled("Einen kleinen Kalender-QR rechts neben jedem Termin drucken?", calendar.get("enabled", True))
         if calendar["enabled"]:
             calendar["summary"] = ask_calendar_title(calendar.get("summary", "Termin Arztpraxis"))
         footer = cfg.setdefault("footer", dict(defaults["footer"]))

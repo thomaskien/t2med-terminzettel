@@ -90,11 +90,11 @@ def migrate_config(text: str, defaults: dict | None = None) -> str:
         cfg["calendar_qr"] = defaults["calendar_qr"]
     calendar = cfg.get("calendar_qr")
     if isinstance(calendar, dict):
-        # Frühere Sammel-QR-Vorgaben auf kleine Einzelcodes umstellen.
-        if calendar.get("caption") in (None, "Alle Termine in Kalender übernehmen"):
-            calendar["caption"] = "Termin speichern"
+        # Beschriftungen entfallen ab 1.3. Nur alte Sammel-QR-Defaults verkleinern.
+        if calendar.get("caption") == "Alle Termine in Kalender übernehmen":
             if calendar.get("max_width_dots") in (360, 384):
                 calendar["max_width_dots"] = 256
+        calendar.pop("caption", None)
     output = cfg.setdefault("output", {})
     if output.get("server", "localhost") not in ("localhost", "127.0.0.1", "::1"):
         raise ValueError("Die alte Konfiguration nutzt einen entfernten Druckserver. Lokale CUPS-Warteschlange erforderlich.")

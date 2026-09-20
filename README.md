@@ -1,6 +1,6 @@
-# T2med-Terminzettel
+# T2med-Terminzettel 1.3
 
-In T2med **Terminzettel** als Drucker auswählen. Der Dienst druckt einen 58-mm-Bon über die vorhandene lokale CUPS-Warteschlange **TMm10**. Bild-PDFs aus T2med liest er bei Bedarf automatisch mit der lokal installierten Texterkennung. Auf Wunsch ergänzt er einen kleinen Offline-Kalender-QR direkt unter jedem Termin.
+In T2med **Terminzettel** als Drucker auswählen. Der Dienst druckt einen 58-mm-Bon über die vorhandene lokale CUPS-Warteschlange **TMm10**. Bild-PDFs aus T2med liest er bei Bedarf automatisch mit der lokal installierten Texterkennung. Auf Wunsch ergänzt er unter dem Datum links Uhrzeit und Terminart und rechts daneben einen kleinen Offline-Kalender-QR je Termin.
 
 ## Installation auf dem Raspberry Pi
 
@@ -8,15 +8,15 @@ Voraussetzung: Raspberry Pi OS mit Python ab 3.10, systemd und eine funktioniere
 
 ### Download und Installation
 
-[Projekt als Archiv herunterladen](https://github.com/thomaskien/t2med-terminzettel/archive/refs/heads/main.tar.gz). Das gesamte Archiv wird benötigt, nicht nur das Installationsskript.
+[Projekt als Archiv herunterladen](https://github.com/thomaskien/t2med-terminzettel/archive/refs/tags/v1.3.tar.gz). Das gesamte Archiv wird benötigt, nicht nur das Installationsskript.
 
 Direkt auf dem Raspberry Pi herunterladen, entpacken und installieren:
 
 ```bash
-cd ~
-curl -fL https://github.com/thomaskien/t2med-terminzettel/archive/refs/heads/main.tar.gz -o terminzettel.tar.gz
-tar -xzf terminzettel.tar.gz
-cd t2med-terminzettel-main/terminzettel-installer
+cd ~ &&
+curl -fL https://github.com/thomaskien/t2med-terminzettel/archive/refs/tags/v1.3.tar.gz -o terminzettel-1.3.tar.gz &&
+tar -xzf terminzettel-1.3.tar.gz &&
+cd t2med-terminzettel-1.3/terminzettel-installer &&
 sudo ./install-terminzettel.sh
 ```
 
@@ -24,7 +24,7 @@ Falls `curl` fehlt: `sudo apt-get update && sudo apt-get install -y curl`. Die �
 
 Ist das Projekt bereits entpackt, im Unterordner `terminzettel-installer` einfach `sudo ./install-terminzettel.sh` ausführen.
 
-Im Terminal fragt der Installer den Praxiskopf, die Kalender-QRs und den Fußtext ab. Bei eingeschalteten QR-Codes fragt er zusätzlich den **Terminnamen im Kalender**, zum Beispiel „Termin Praxis Muster“. Jeden Block mit **j/n** einschalten oder ausschalten. Kopf und Fuß können mehrere Zeilen haben; eine Leerzeile beendet die Eingabe. Enter als erste Eingabe übernimmt den angezeigten Text, ein einzelnes `-` leert ihn. Für einen bisher leeren Fußtext wird der unten gezeigte Hinweis vorgeschlagen. Bei Updates bleiben eigene Texte und Schalter als Vorgabe erhalten. Ohne interaktives Terminal gibt es keine Abfragen; vorhandene Werte bleiben bestehen und Neuinstallationen verwenden die Beispieldatei.
+Im Terminal fragt der Installer den Praxiskopf, die Kalender-QRs und den Fußtext ab. Bei eingeschalteten QR-Codes fragt er zusätzlich den **Präfix für den Kalender-Titel**, zum Beispiel „Praxis ABC“. Zusammen mit der Terminart „Lufu“ wird daraus „Praxis ABC: Lufu“. Enter übernimmt den bisherigen Präfix; ein einzelnes `-` entfernt ihn. Jeden Block mit **j/n** einschalten oder ausschalten. Kopf und Fuß können mehrere Zeilen haben; eine Leerzeile beendet die Eingabe. Enter als erste Eingabe übernimmt den angezeigten Text, ein einzelnes `-` leert ihn. Für einen bisher leeren Fußtext wird der unten gezeigte Hinweis vorgeschlagen. Bei Updates bleiben eigene Texte und Schalter als Vorgabe erhalten. Ohne interaktives Terminal gibt es keine Abfragen; vorhandene Werte bleiben bestehen und Neuinstallationen verwenden die Beispieldatei.
 
 ### Vorhandene Installation aktualisieren
 
@@ -131,7 +131,7 @@ text = "Können Sie einen Termin nicht wahrnehmen, sagen Sie bitte unbedingt Bes
 
 Mit `enabled = false` lässt sich der jeweilige Block abschalten, ohne seinen Text zu löschen. Das gilt auch für `[calendar_qr]`.
 
-Der gesamte Bontext wird standardmäßig **doppelt hoch und doppelt breit** gedruckt; Groß- und Kleinschreibung bleiben erhalten. Bei 35 Zeichen in Normalbreite passen dadurch 17 große Zeichen in eine Zeile. Kopf, Termine, QR-Beschriftung und Fußtext werden passend umgebrochen. Der QR selbst behält seine unabhängig berechnete Rastergröße.
+Der gesamte Bontext wird standardmäßig **doppelt hoch und doppelt breit** gedruckt; Groß- und Kleinschreibung bleiben erhalten. Bei 35 Zeichen in Normalbreite passen dadurch 17 große Zeichen in eine Zeile. Kopf, Termine und Fußtext werden passend umgebrochen. Neben dem QR ist die Textspalte schmaler; Uhrzeit und Terminart stehen dort untereinander. Eine QR-Beschriftung gibt es nicht. Der QR selbst behält seine unabhängig berechnete Rastergröße.
 
 ```toml
 [layout]
@@ -170,33 +170,43 @@ Mit `ocr_if_needed = false` lässt sich OCR abschalten. Fehlerhafte Termine sowi
 ```toml
 [calendar_qr]
 enabled = true
-summary = "Termin Arztpraxis"
+summary = "Praxis ABC"
 timezone = "Europe/Berlin"
 default_duration_minutes = 15
 
 include_location = false
 location = ""
 
-caption = "Termin speichern"
 error_correction = "M"
 quiet_zone_modules = 4
 max_width_dots = 256
 min_module_dots = 3
 ```
 
-`summary` ist der Terminname, der nach dem Scannen im Handy-Kalender erscheint. Er wird beim Installieren abgefragt und lässt sich hier jederzeit ändern.
+`summary` ist ab Version 1.3 der **Präfix** für den Kalender-Titel. Aus `summary = "Praxis ABC"` und der T2med-Terminart `Lufu` wird `Praxis ABC: Lufu`. Mit `summary = ""` heißt der Eintrag nur `Lufu`. Ein bereits angehängter Doppelpunkt wird nicht verdoppelt. Der Installer fragt den Präfix ab; eigene bisherige Werte bleiben als Vorgabe erhalten. Auf dem Bon steht die Terminart ohne Praxis-Präfix.
 
-Für die Praxisadresse beispielsweise `include_location = true` und `location = "Praxis Beispiel, Musterstraße 1, 12345 Musterstadt"` setzen. Titel und Adresse sind feste Praxisangaben; dort keine Patienteninformationen eintragen. Es gibt keine Platzhalter für Name, Behandlungsgrund oder Termintyp.
+Für die Praxisadresse beispielsweise `include_location = true` und `location = "Praxis Beispiel, Musterstraße 1, 12345 Musterstadt"` setzen. Präfix und Adresse sind feste Praxisangaben; dort keine Patientennamen eintragen. Die Terminart wird automatisch aus dem T2med-Beleg ergänzt.
 
-Jeder QR enthält genau den Termin, unter dem er gedruckt wird. **Jeden gewünschten Termin einzeln scannen und speichern.** Ein Sammel-QR mit mehreren Einträgen wurde im iPhone-Gerätetest nur teilweise übernommen; deshalb gibt es jetzt Einzelcodes. Beginn und Ende werden mit der eingestellten Zeitzone nach UTC umgerechnet. Die Standarddauer beträgt 15 Minuten. Der Kalendergenerator unterstützt zusätzlich eine ausdrücklich angegebene Endzeit; der gegenwärtige T2med-Parser liefert nur Anfangszeiten. Mehrdeutige oder nicht existierende Zeiten bei der Zeitumstellung werden vom Kalendergenerator nicht geraten.
+Jeder QR enthält genau den Termin, neben dem er gedruckt wird. **Jeden gewünschten Termin einzeln scannen und speichern.** Ein Sammel-QR mit mehreren Einträgen wurde im iPhone-Gerätetest nur teilweise übernommen; deshalb gibt es jetzt Einzelcodes. Beginn und Ende werden mit der eingestellten Zeitzone nach UTC umgerechnet. Die Standarddauer beträgt 15 Minuten. Der Kalendergenerator unterstützt zusätzlich eine ausdrücklich angegebene Endzeit; der gegenwärtige T2med-Parser liefert nur Anfangszeiten. Mehrdeutige oder nicht existierende Zeiten bei der Zeitumstellung werden vom Kalendergenerator nicht geraten.
 
-Die QR-Codes benötigen weder URL noch Internet oder Kalenderdienst. Patientenname und Termintyp werden nicht an das Kalendermodul übergeben. Der QR wird im RAM erzeugt und als Schwarzweiß-Raster gedruckt. Die Adresse erscheint nur bei aktivierter Option im Kalendereintrag. Jede Neuausgabe erhält neue zufällige IDs; erneutes Scannen desselben Bons liest dieselben IDs.
+Die QR-Codes benötigen weder URL noch Internet oder Kalenderdienst. Der Kalender-Titel enthält den Praxis-Präfix und die Terminart, jedoch keinen Patientennamen. Der QR wird im RAM erzeugt und als Schwarzweiß-Raster gedruckt. Die Adresse erscheint nur bei aktivierter Option im Kalendereintrag. Jede Neuausgabe erhält neue zufällige IDs; erneutes Scannen desselben Bons liest dieselben IDs.
 
-**Ein langer Kalendertitel oder eine lange Adresse kann die lesbare QR-Größe überschreiten.** Dann fehlt nur der betroffene QR; die lesbaren Termine und die übrigen Codes werden weiterhin gedruckt. Das gilt auch bei einem QR-Fehler. Es erscheinen nur feste technische Fehlermeldungen, keine QR-Inhalte. Die Rasterbreite darf höchstens 384 Punkte betragen; mindestens drei Punkte pro Modul und vier freie Randmodule werden erzwungen. Im Ausgabeformat `text` gibt es keinen QR.
+**Ein langer Kalendertitel oder eine lange Adresse kann die lesbare QR-Größe überschreiten.** Dann fehlt nur der betroffene QR; die lesbaren Termine und die übrigen Codes werden weiterhin gedruckt. Das gilt auch bei einem QR-Fehler. Es erscheinen nur feste technische Fehlermeldungen, keine QR-Inhalte. Für `max_width_dots` sind höchstens 384 Punkte zulässig; im Layout wird die Breite zusätzlich so begrenzt, dass links die Uhrzeit vollständig Platz hat (bei Font A und doppelter Breite höchstens 288 Punkte). Mindestens drei Punkte pro Modul und vier freie Randmodule werden erzwungen. Im Ausgabeformat `text` gibt es keinen QR.
 
-Die Vorgabe ist `max_width_dots = 256`. Mit dem Standardtitel entsteht ein QR von 219 × 219 Punkten einschließlich freiem Rand, statt der bisherigen 363 × 363 Punkte für fünf Termine. Für längere Titel oder eine Adresse lässt sich die Obergrenze bei Bedarf auf 300 oder höchstens 384 erhöhen. Beim Update werden die alte Standardbeschriftung und die zugehörigen Breiten 360/384 auf die neuen Einzelcode-Vorgaben umgestellt. Eigene Beschriftungen und andere Breiten bleiben erhalten; nachträglich gewählte größere Breiten bleiben bei Folgeupdates bestehen.
+Die Vorgabe ist `max_width_dots = 256`. Ein kurzer Titel wie „Praxis ABC: Lufu“ ergibt typischerweise 219 × 219 Punkte einschließlich freiem Rand. Die konkrete Größe hängt von Titel und optionaler Adresse ab. Der QR steht rechtsbündig im 420 Punkte breiten Druckbereich des TM-m10. Links stehen Uhrzeit und Terminart in der bisherigen großen Druckerschrift. Lange Terminarten werden umgebrochen; der QR wird dabei weder gestaucht noch angeschnitten.
 
-Vor dem Praxiseinsatz die kleineren, gedruckten Einzelcodes mit iPhone und Android prüfen: Jeden Code scannen, den zugehörigen Termin speichern und Datum sowie Uhrzeit kontrollieren. Das iPhone übernahm aus dem bisherigen Sammel-QR nur den ersten Termin. Die neue Einzelcode-Ausgabe samt kleinerer Größe muss noch am gedruckten Bon bestätigt werden.
+```text
+Do. 17.09.2026
+09:00       ┌─────────┐
+Lufu        │ QR-Code │
+            └─────────┘
+```
+
+Die Beschriftung „Termin speichern“ entfällt ersatzlos. Beim Update wird `caption` aus der TOML entfernt; auch alte eigene Beschriftungen werden nicht mehr ausgegeben. Die bisherige Sammel-QR-Standardbeschriftung mit Breite 360/384 wird auf 256 umgestellt. Andere Breiten bleiben konfiguriert, werden bei der Ausgabe aber auf den verfügbaren Platz begrenzt.
+
+Die Umsetzung nutzt die vorhandene Druckerschrift und den flüchtigen [Seitenmodus des TM-m10](https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/tmm10.html). Es werden keine zusätzlichen Schriften oder Grafikdateien auf dem Raspberry Pi gespeichert. Ohne QR oder bei einem QR-Fehler nutzt der Termintext wieder die gesamte Bonbreite.
+
+Vor dem Praxiseinsatz die kleineren, gedruckten Einzelcodes mit iPhone und Android prüfen: Jeden Code scannen, den zugehörigen Termin speichern und Datum sowie Uhrzeit kontrollieren. Das iPhone übernahm aus dem bisherigen Sammel-QR nur den ersten Termin. Das neue Layout der Version 1.3 muss noch am gedruckten Bon bestätigt werden.
 
 ## Patientendaten
 

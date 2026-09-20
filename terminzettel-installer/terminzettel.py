@@ -406,36 +406,64 @@ class EscPosRenderer:
         return bytes(self.buf)
 
 
-def append_calendar_qr(r: EscPosRenderer, appointment: Appointment, cfg: dict[str, Any]) -> None:
-    # Ein Termin pro QR: Kamera-Importer übernehmen aus Sammel-QRs teils nur den ersten.
+def append_appointment_row(r: EscPosRenderer, appointment: Appointment, cfg: dict[str, Any]) -> bool:
+    """Links große Druckerschrift, rechts genau der zugehörige Offline-QR."""
     try:
         calendar = cfg.get("calendar_qr", {})
         if not isinstance(calendar, dict):
             raise ValueError("invalid QR configuration")
-        if calendar.get("enabled", False):
-            from calendar_qr import CalendarAppointment, build_icalendar, build_qr_image
-            from escpos import raster_image
+        if not cfg_bool(calendar, "enabled", False):
+            return False
+        from calendar_qr import CalendarAppointment, appointment_summary, build_icalendar, build_qr_image
+        from escpos import page_image
 
-            if type(calendar.get("enabled")) is not bool:
-                raise ValueError("invalid QR configuration")
-            payload = build_icalendar([CalendarAppointment(start=appointment.dt)], calendar)
-            bitmap = build_qr_image(payload, calendar)
-            raster = raster_image(bitmap)
-            caption = safe_text(str(calendar.get("caption", "Termin speichern")))
-            addition = EscPosRenderer(cfg)
-            addition.line("")
-            addition.set_align("center")
-            addition.raw(raster)
-            addition.line("")
-            for line in textwrap.wrap(caption, width=r.columns):
-                addition.line(line, align="center")
-            addition.reset_style()
-            r.reset_style()
-            r.raw(bytes(addition.buf))
+        layout = cfg.get("layout", {})
+        font_width = 10 if str(cfg.get("escpos", {}).get("font", "A")).upper() == "B" else 12
+        width_scale = 2 if cfg_bool(layout, "double_width", True) else 1
+        height_scale = 2 if cfg_bool(layout, "double_height", True) else 1
+        char_width, char_height = font_width * width_scale, 24 * height_scale
+        # TM-m10: 420 Druckpunkte, Font A 12 x 24 Punkte (35 Zeichen).
+        page_width = 420
+        qr_config = dict(calendar)
+        qr_config["summary"] = appointment_summary(calendar.get("summary", "Termin Arztpraxis"), appointment.kind)
+        payload = build_icalendar([CalendarAppointment(start=appointment.dt)], qr_config)
+        # Mindestens die Uhrzeit muss vollständig in die linke Spalte passen.
+        requested = calendar.get("max_width_dots", 256)
+        if type(requested) is not int or not 64 <= requested <= 384:
+            raise ValueError("invalid QR configuration")
+        qr_config["max_width_dots"] = min(requested, page_width - 5 * char_width - 12)
+        bitmap = build_qr_image(payload, qr_config)
+        qr_x = page_width - bitmap.width
+        columns = min(r.columns, (qr_x - 12) // char_width)
+        lines = [appointment.time] + (textwrap.wrap(appointment.kind, width=columns,
+                 break_long_words=True, break_on_hyphens=False) or [""])
+        line_height = char_height + 6
+        page_height = max(((bitmap.height + 23) // 24) * 24, len(lines) * line_height) + 8
+        if page_height > 2400:
+            raise ValueError("appointment row too high")
+
+        # Zuerst vollständig bauen: bei jedem Fehler bleibt der normale Textbon erhalten.
+        addition = EscPosRenderer(cfg)
+        addition.raw(b"\x1dP\xcb\xcb")  # TM-m10: 203 dpi, Koordinaten in Druckpunkten.
+        addition.raw(b"\x1bL\x1bT\x00")
+        addition.raw(b"\x1bW\x00\x00\x00\x00" + page_width.to_bytes(2, "little")
+                     + page_height.to_bytes(2, "little"))
+        addition.set_size(height_scale == 2, width_scale == 2)
+        for index, line in enumerate(lines):
+            addition.raw(b"\x1b$\x00\x00\x1d$" + (index * line_height + char_height - 1).to_bytes(2, "little"))
+            addition.raw(addition.encode(safe_text(line)))
+        addition.raw(page_image(bitmap, qr_x))
+        addition.raw(b"\x0c")  # Den Block drucken und in den Standardmodus zurückkehren.
+        addition.reset_style()
+        addition.raw(b"\x1dP\x00\x00")
+        r.reset_style()
+        r.raw(bytes(addition.buf))
+        return True
     except Exception as exc:
         # Nur feste technische Meldungen; niemals Payload oder Fremdfehlermeldungen.
         message = "calendar QR payload too large" if type(exc).__name__ == "PayloadTooLarge" else "calendar QR generation failed"
         eprint(message)
+        return False
 
 
 def render_escpos(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
@@ -468,6 +496,8 @@ def render_escpos(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
         r.line(date_line, align="left", bold=True)
 
         for appt in appts:
+            if append_appointment_row(r, appt, cfg):
+                continue
             prefix = f"{appt.time}  "
             available = max(8, r.columns - len(prefix))
             chunks = textwrap.wrap(appt.kind, width=available, break_long_words=True,
@@ -475,7 +505,6 @@ def render_escpos(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
             r.line(prefix + chunks[0], align="left", bold=False)
             for chunk in chunks[1:]:
                 r.line(" " * len(prefix) + chunk, align="left", bold=False)
-            append_calendar_qr(r, appt, cfg)
 
         if group_idx < len(groups) - 1:
             r.line("")
@@ -634,6 +663,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Einseitiger T2med-Terminbeleg auf 58-mm-Bondrucker")
     parser.add_argument("input", nargs="?", help="Von Samba übergebene Spooldatei")
     parser.add_argument("--config", default=DEFAULT_CONFIG)
+    parser.add_argument("--version", action="version", version="Terminzettel 1.3")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="Beleg prüfen, ohne Druck oder Datenexport")
     mode.add_argument("--self-test", action="store_true", help="Selbsttest mit künstlichen Daten, ohne Druck")
