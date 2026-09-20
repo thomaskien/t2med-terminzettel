@@ -1,5 +1,9 @@
 # T2med-Terminzettel 1.3
 
+<p align="center">
+  <img src="IMG_4359.jpeg" alt="T2med-Terminbon mit großer Schrift, Uhrzeit und Terminart links sowie einem Kalender-QR rechts je Termin" width="640">
+</p>
+
 In T2med **Terminzettel** als Drucker auswählen. Der Dienst druckt einen 58-mm-Bon über die vorhandene lokale CUPS-Warteschlange **TMm10**. Bild-PDFs aus T2med liest er bei Bedarf automatisch mit der lokal installierten Texterkennung. Auf Wunsch ergänzt er unter dem Datum links Uhrzeit und Terminart und rechts daneben einen kleinen Offline-Kalender-QR je Termin.
 
 ## Installation auf dem Raspberry Pi
