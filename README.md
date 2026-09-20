@@ -1,5 +1,10 @@
 # T2med-Terminzettel 1.3
 
+> [!IMPORTANT]
+> **Zuerst den Bondrucker einrichten:** [Epson TM-m10 per Bluetooth unter Linux installieren und für macOS freigeben](https://github.com/thomaskien/t2med-sumup/blob/main/epson-tm-m10-bluetooth-linux-samba-macos.md).
+>
+> Voraussetzung für dieses Projekt ist eine funktionierende lokale CUPS-Warteschlange `TMm10`. Anschließend den Terminzettel-Installer ausführen und auf dem Mac den [virtuellen Drucker **Terminzettel** mit dem PDF-Treiber hinzufügen](#drucker-auf-dem-mac-hinzufügen).
+
 <p align="center">
   <img src="IMG_4359.jpeg" alt="T2med-Terminbon mit großer Schrift, Uhrzeit und Terminart links sowie einem Kalender-QR rechts je Termin" width="640">
 </p>
