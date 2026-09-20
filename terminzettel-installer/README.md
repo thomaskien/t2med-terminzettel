@@ -4,6 +4,8 @@
 > **Zuerst den Bondrucker einrichten:** [Epson TM-m10 per Bluetooth unter Linux installieren und für macOS freigeben](https://github.com/thomaskien/t2med-sumup/blob/main/epson-tm-m10-bluetooth-linux-samba-macos.md).
 >
 > Voraussetzung für dieses Projekt ist eine funktionierende lokale CUPS-Warteschlange `TMm10`. Anschließend den Terminzettel-Installer ausführen und auf dem Mac den [virtuellen Drucker **Terminzettel** mit dem PDF-Treiber hinzufügen](#drucker-auf-dem-mac-hinzufügen).
+>
+> **OCR ist für Bild-PDFs aus T2med erforderlich:** Der Terminzettel-Installer installiert Tesseract mit deutschem Sprachpaket und die benötigten PDF-Werkzeuge automatisch. Eine vorhandene Installation, etwa durch kienzlefax, wird mitbenutzt. Eine separate OCR-Einrichtung ist nicht nötig. [Details zur Texterkennung](#automatische-texterkennung).
 
 <p align="center">
   <img src="../IMG_4359.jpeg" alt="T2med-Terminbon mit großer Schrift, Uhrzeit und Terminart links sowie einem Kalender-QR rechts je Termin" width="640">
@@ -161,6 +163,10 @@ format = "escpos"
 ```
 
 ### Automatische Texterkennung
+
+Für Bild-PDFs benötigt Terminzettel die Pakete `tesseract-ocr`, `tesseract-ocr-deu` und `poppler-utils`. Der Terminzettel-Installer installiert diese automatisch; bereits installierte Pakete werden mitbenutzt.
+
+Das [Scan-/Fax-OCR-Skript von kienzlefax](https://github.com/thomaskien/kienzlefax-fuer-linux/blob/main/installer-modular/scan_ocr.sh) richtet zusätzliche Dienste, Dateiarchive und Samba-Freigaben ein. Es muss für Terminzettel **nicht zusätzlich ausgeführt werden**. Terminzettel nutzt Tesseract direkt und benötigt weder OCRmyPDF noch den Scan-/Faxdienst.
 
 Standardmäßig aktiv, auch beim Update einer älteren Konfiguration:
 
