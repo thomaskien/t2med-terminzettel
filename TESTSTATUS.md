@@ -18,9 +18,9 @@ Stand: 20. September 2026. Die automatisierten Tests verwenden ausschließlich k
 - Python-3.10-Syntax aller Programmmodule und 16 Parser-Tests mit einem echten Python-3.10-Interpreter geprüft.
 - Shell-Syntax, CLI-Selbsttest und Git-Diff auf Formatfehler geprüft.
 
-Der [Linux-Integrationstest vom 19. September 2026](https://github.com/thomaskien/t2med-terminzettel/actions/runs/35471669091) ist erfolgreich: Installation, Update, PDF und PostScript über IPP/CUPS, fertiger ESC/POS-Bon mit QR, Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Die vorhandene Zielwarteschlange bleibt erhalten. Der Test läuft mit aktivem AppArmor; der Installer ergänzt gegebenenfalls die benötigten Regeln für den RAM-Zwischenspeicher. Die PPD besteht `cupstestppd`.
+Der [Linux-Integrationstest vom 20. September 2026](https://github.com/thomaskien/t2med-terminzettel/actions/runs/35501522180) ist erfolgreich: Installation, Update, Text-PDF, PostScript und Bild-PDF mit echter OCR über IPP/CUPS, fertiger ESC/POS-Bon mit QR, Bonjour-Ankündigung und Deinstallation mit einem simulierten Ausgabedrucker. Die vorhandene Zielwarteschlange bleibt erhalten. Der Test läuft mit aktivem AppArmor; der Installer ergänzt gegebenenfalls die benötigten Regeln für den RAM-Zwischenspeicher. Beide PPDs bestehen `cupstestppd`.
 
-Im selben GitHub-Actions-Lauf bestanden alle 102 Tests sowohl unter Python 3.10 als auch unter Python 3.13 mit Poppler und Ghostscript, einschließlich der echten PostScript-Konvertierung und eines mit dem macOS-Treiber „Generic PostScript Printer“ erzeugten Musterzettels. Auch die sichtbare sichere Fehlermeldung nach einer abgewiesenen Eingabe ist mit laufendem CUPS geprüft. Weitere Ausführungen sind im Repository unter **Actions** sichtbar.
+Im selben GitHub-Actions-Lauf wurden alle 114 Tests sowohl unter Python 3.10 als auch unter Python 3.13 ausgeführt: jeweils 113 bestanden, nur der ausschließlich unter macOS verfügbare Filtertest wurde übersprungen. Enthalten sind echte OCR mit dem deutschen Sprachpaket, PostScript-Konvertierung und ein mit dem macOS-Treiber „Generic PostScript Printer“ erzeugter Musterzettel. Auch die sichtbare sichere Fehlermeldung nach einer abgewiesenen Eingabe ist mit laufendem CUPS geprüft. Weitere Ausführungen sind im Repository unter **Actions** sichtbar.
 
 ## Lokaler Abgleich des T2med-Druckwegs
 
@@ -42,8 +42,8 @@ Ein langer Adresszusatz kann auch bei 384 Punkten zu groß werden. Die Software 
 
 ## Noch am Gerät prüfen
 
-1. Installation auf dem vorgesehenen Raspberry Pi OS, Neustart und lokaler CUPS-Zugriff auf `TMm10`; temporäres RAM-Dateisystem und tatsächliche Dienstberechtigungen.
-2. Bonjour-Drucker auf dem Mac unter „Default“ hinzufügen. Echter T2med-Auftrag über IPP und gegebenenfalls Samba: PDF und gegebenenfalls PostScript/XPS, Umlaute, Layout und Schnitt. XPS wurde lokal nicht mit einem echten Konverter geprüft.
+1. Update auf dem vorgesehenen Raspberry Pi OS, Neustart und lokaler CUPS-Zugriff auf `TMm10`; temporäres RAM-Dateisystem und tatsächliche Dienstberechtigungen.
+2. Echter T2med-Auftrag über den vorhandenen Bonjour-Drucker nach dem OCR-Update: Termine und Namen auf dem Bon mit dem Original vergleichen, Umlaute, Layout und Schnitt prüfen. Gegebenenfalls zusätzlich Samba/PostScript/XPS testen. XPS wurde lokal nicht mit einem echten Konverter geprüft.
 3. Drucker ausgeschaltet, Papier leer und abgebrochener Auftrag: Verhalten von CUPS und anschließende Bereinigung kontrollieren.
 4. Gedruckte Bons mit einem, zwei, drei und fünf Terminen: QR-Erkennung auf iPhone und Android, Import **aller** Kalendereinträge, richtige Uhrzeiten und erneutes Scannen. Für fünf Termine zusätzlich die Einstellung 384 Punkte testen.
 5. Optionaler Praxisadresszusatz und eine Kalender-App ohne Internetverbindung.
