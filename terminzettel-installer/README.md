@@ -24,6 +24,8 @@ Falls `curl` fehlt: `sudo apt-get update && sudo apt-get install -y curl`. Die �
 
 Ist das Projekt bereits entpackt, im Unterordner `terminzettel-installer` einfach `sudo ./install-terminzettel.sh` ausführen.
 
+Im Terminal fragt der Installer den Praxiskopf, den Kalender-QR und den Fußtext ab. Jeden Block mit **j/n** einschalten oder ausschalten. Kopf und Fuß können mehrere Zeilen haben; eine Leerzeile beendet die Eingabe. Enter als erste Eingabe übernimmt den angezeigten Text, ein einzelnes `-` leert ihn. Für einen bisher leeren Fußtext wird der unten gezeigte Hinweis vorgeschlagen. Bei Updates bleiben eigene Texte und Schalter als Vorgabe erhalten. Ohne interaktives Terminal gibt es keine Abfragen; vorhandene Werte bleiben bestehen und Neuinstallationen verwenden die Beispieldatei.
+
 ### Vorhandene Installation aktualisieren
 
 Bei einem Download als Archiv die Download- und Installationsbefehle oben erneut ausführen. Einstellungen gehören nach `/etc/terminzettel/config.toml`; diese übernimmt der Installer beim Update.
@@ -107,23 +109,41 @@ sudo nano /etc/terminzettel/config.toml
 
 Änderungen gelten ab dem nächsten Auftrag; ein Neustart ist nicht nötig. Die folgenden Abschnitte in der vorhandenen Datei bearbeiten, nicht doppelt anlegen.
 
-Kopf und Fuß beispielsweise:
+Die Reihenfolge auf dem Bon ist **Praxiskopf → Name und Termine → Kalender-QR → Fußtext**. Alle drei Blöcke sind unabhängig schaltbar. Kopf und Fuß beispielsweise:
 
 ```toml
 [header]
 enabled = true
 align = "center"
 bold = true
-text = "Praxis Beispiel"
+text = """
+Praxis Beispiel
+Musterstraße 1
+12345 Musterstadt
+"""
 
 [footer]
 enabled = true
 align = "center"
 bold = false
-text = "Bitte bringen Sie Ihre Versichertenkarte mit."
+text = "Können Sie einen Termin nicht wahrnehmen, sagen Sie bitte unbedingt Bescheid."
 ```
 
-Mit `enabled = false` lässt sich der jeweilige Block abschalten. Standardziel:
+Mit `enabled = false` lässt sich der jeweilige Block abschalten, ohne seinen Text zu löschen. Das gilt auch für `[calendar_qr]`.
+
+Der gesamte Bontext wird standardmäßig **doppelt hoch und doppelt breit** gedruckt; Groß- und Kleinschreibung bleiben erhalten. Bei 35 Zeichen in Normalbreite passen dadurch 17 große Zeichen in eine Zeile. Kopf, Termine, QR-Beschriftung und Fußtext werden passend umgebrochen. Der QR selbst behält seine unabhängig berechnete Rastergröße.
+
+```toml
+[layout]
+columns = 35
+double_height = true
+double_width = true
+heading_double_height = true
+```
+
+`columns` bleibt die Zahl der Zeichen in Normalbreite; nicht zusätzlich halbieren. Für normale Schrift beide `double_…`-Werte auf `false` setzen; soll auch die Überschrift normal hoch sein, zusätzlich `heading_double_height = false`. Die Schriftgrößen gelten für die ESC/POS-Ausgabe.
+
+Standardziel:
 
 ```toml
 [output]
@@ -160,7 +180,7 @@ location = ""
 caption = "Alle Termine in Kalender übernehmen"
 error_correction = "M"
 quiet_zone_modules = 4
-max_width_dots = 360
+max_width_dots = 384
 min_module_dots = 3
 ```
 
@@ -172,7 +192,7 @@ Der QR benötigt weder URL noch Internet oder Kalenderdienst. Patientenname und 
 
 **Zu viele Termine oder lange Adressen können die lesbare QR-Größe überschreiten.** Dann wird der Bon ohne QR gedruckt. Ebenso bei einem QR-Fehler. Es erscheinen nur feste technische Fehlermeldungen, keine QR-Inhalte. Die Rasterbreite darf höchstens 384 Punkte betragen; mindestens drei Punkte pro Modul und vier freie Randmodule werden erzwungen. Im Ausgabeformat `text` gibt es keinen QR.
 
-Im automatisierten Test passen ein bis drei Termine mit dem Standardtitel in 360 Punkte. Fünf Termine ohne Adresse benötigen 363 Punkte und passen erst mit `max_width_dots = 384`. Diese breitere Einstellung vorher am Drucker prüfen; eine Adresse vergrößert den QR zusätzlich.
+Die Vorgabe ist `max_width_dots = 384` für den TM-m10. Im automatisierten Test passen damit auch fünf Termine ohne Adresse in einen QR (363 Punkte). Bestätigt man im Installer den eingeschalteten QR, wird die frühere Standardbreite 360 auf 384 angehoben; andere individuell gesetzte Breiten bleiben erhalten. Eine Adresse oder ein längerer Kalendertitel vergrößert den QR zusätzlich. Den gedruckten QR am Handy prüfen.
 
 Ein korrekt lesbarer Kalender-QR garantiert noch keinen Kalenderimport durch jede Smartphone-Kamera. Vor dem Praxiseinsatz auf dem TM-m10 mit iPhone und Android prüfen: Erkennung, Import aller Einträge, Uhrzeit und erneutes Scannen. Dieser Gerätetest ist noch offen.
 

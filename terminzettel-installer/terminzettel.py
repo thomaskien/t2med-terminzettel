@@ -289,10 +289,13 @@ class EscPosRenderer:
             raise TicketError("Für ESC/POS eine unterstützte Einbyte-Kodierung verwenden.")
         if not 8 <= self.columns <= 64 or not 0 <= self.codepage <= 255:
             raise TicketError("Ungültige Druckbreite oder Codepage.")
+        if cfg_bool(layout, "double_width", True):
+            self.columns //= 2
         self.buf = bytearray()
         self._align = "left"
         self._bold = False
         self._double_height = False
+        self._double_width = False
 
     def raw(self, data: bytes) -> None:
         self.buf.extend(data)
@@ -318,12 +321,16 @@ class EscPosRenderer:
             self._bold = enabled
 
     def set_double_height(self, enabled: bool) -> None:
-        if enabled != self._double_height:
-            self.raw(self.GS + b"!" + (b"\x01" if enabled else b"\x00"))
-            self._double_height = enabled
+        self.set_size(enabled, self._double_width)
+
+    def set_size(self, double_height: bool, double_width: bool) -> None:
+        if (double_height, double_width) != (self._double_height, self._double_width):
+            size = (0x01 if double_height else 0) | (0x10 if double_width else 0)
+            self.raw(self.GS + b"!" + bytes([size]))
+            self._double_height, self._double_width = double_height, double_width
 
     def reset_style(self) -> None:
-        self.set_double_height(False)
+        self.set_size(False, False)
         self.set_bold(False)
         self.set_align("left")
 
@@ -343,8 +350,9 @@ class EscPosRenderer:
             self.set_align(align)
         if bold is not None:
             self.set_bold(bold)
-        if double_height is not None:
-            self.set_double_height(double_height)
+        if double_height is None:
+            double_height = cfg_bool(self.cfg.get("layout", {}), "double_height", True)
+        self.set_size(double_height, cfg_bool(self.cfg.get("layout", {}), "double_width", True))
         self.raw(self.encode(safe_text(text)) + b"\n")
 
     def wrapped(self, text: str, *, align: str = "left", bold: bool = False,
@@ -466,6 +474,9 @@ def render_escpos(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
             r.raw(bytes(addition.buf))
             # addition endete zentriert, r muss den tatsächlichen Zustand kennen.
             r._align = addition._align
+            r._bold = addition._bold
+            r._double_height = addition._double_height
+            r._double_width = addition._double_width
             r.reset_style()
     except Exception as exc:
         # Nur feste technische Meldungen; niemals Payload oder Fremdfehlermeldungen.

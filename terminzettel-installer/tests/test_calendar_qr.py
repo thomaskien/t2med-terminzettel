@@ -128,9 +128,13 @@ class QrTests(unittest.TestCase):
             self.assertEqual(image.mode, "1")
             self.assertLessEqual(image.width, width)
 
-    def test_five_events_exceed_default_readable_width(self):
+    def test_five_events_exceed_old_360_dot_width(self):
         with self.assertRaises(calendar.PayloadTooLarge):
-            calendar.build_qr_image(calendar.build_icalendar(starts(5), {}), {})
+            calendar.build_qr_image(calendar.build_icalendar(starts(5), {}), {"max_width_dots": 360})
+
+    def test_default_width_fits_five_events(self):
+        image = calendar.build_qr_image(calendar.build_icalendar(starts(5), {}), {})
+        self.assertLessEqual(image.width, 384)
 
     def test_address_qr_decodes_byte_for_byte(self):
         import zxingcpp

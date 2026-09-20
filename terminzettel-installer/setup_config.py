@@ -84,6 +84,8 @@ PreserveJobFiles No
 def migrate_config(text: str, defaults: dict | None = None) -> str:
     cfg = tomllib.loads(text)
     cfg.setdefault("input", {}).setdefault("ocr_if_needed", True)
+    cfg.setdefault("layout", {}).setdefault("double_height", True)
+    cfg["layout"].setdefault("double_width", True)
     if defaults and "calendar_qr" not in cfg:
         cfg["calendar_qr"] = defaults["calendar_qr"]
     output = cfg.setdefault("output", {})
@@ -98,6 +100,10 @@ def migrate_config(text: str, defaults: dict | None = None) -> str:
     if not isinstance(queue, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", queue) or queue.casefold() == "terminzettel":
         raise ValueError("Ungültige CUPS-Zielwarteschlange.")
     cfg.pop("debug", None)
+    return dump_config(cfg)
+
+
+def dump_config(cfg: dict) -> str:
     result = ["# Terminzettel: lokale CUPS-Ausgabe, keine Belegspeicherung.\n"]
     for name, values in cfg.items():
         if not isinstance(values, dict) or not re.fullmatch(r"[A-Za-z0-9_-]+", name):

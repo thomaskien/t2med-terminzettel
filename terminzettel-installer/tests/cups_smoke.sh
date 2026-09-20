@@ -82,6 +82,8 @@ for suffix, data in (('pdf', pdf_fixture()), ('ps', postscript_fixture()), ('ima
     assert destination.exists(), suffix + ': No receipt reached the synthetic printer'
     data = destination.read_bytes()
     assert b'Testperson Alpha' in data
+    assert b'\x1d!\x11' in data, 'Double width/height missing'
+    assert 'Können Sie einen'.encode('cp858') in data, 'Reminder missing'
     assert b'\x1dv0\x00' in data, 'QR raster missing'
     assert data.endswith(b'\x1dV\x01'), 'Cut missing'
     assert not conn.getJobs(which_jobs='not-completed'), 'Jobs did not finish'

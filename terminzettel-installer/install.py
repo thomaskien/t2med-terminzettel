@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 
-from setup_config import APPARMOR_LOCAL, APPARMOR_PROFILE, plan, remove_block, tomllib
+from setup_config import APPARMOR_LOCAL, APPARMOR_PROFILE, dump_config, plan, remove_block, tomllib
 import cups_queue
 
 SOURCE = Path(__file__).resolve().parent
@@ -133,8 +133,67 @@ def write_file(name, text, prior):
     atomic_write(Path(name), text.encode(), mode, 0, gid)
 
 
+def ask_enabled(label: str, current: bool) -> bool:
+    while True:
+        answer = input(label + (" [J/n]: " if current else " [j/N]: ")).strip().lower()
+        if not answer:
+            return current
+        if answer in ("j", "ja", "y", "yes"):
+            return True
+        if answer in ("n", "nein", "no"):
+            return False
+        print("Bitte j oder n eingeben; Enter übernimmt den angezeigten Wert.")
+
+
+def ask_text(label: str, current: str) -> str:
+    print(label + (" – bisheriger Text/Vorgabe:" if current else ":"))
+    if current:
+        print(current)
+    print("Enter übernimmt den Text. Für einen neuen Text Zeilen eingeben, dann eine Leerzeile.")
+    print("Ein einzelnes - als erste Zeile leert den Text.")
+    lines = []
+    while True:
+        line = input("> ")
+        if any(ord(char) < 32 or 127 <= ord(char) < 160 for char in line):
+            print("Bitte nur normalen Text ohne Steuerzeichen eingeben.")
+            continue
+        if not lines and line.strip() == "-":
+            return ""
+        if not line.strip():
+            return "\n".join(lines) if lines else current
+        lines.append(line.strip())
+
+
+def configure_receipt(text: str) -> str:
+    if not sys.stdin.isatty():
+        return text
+    cfg = tomllib.loads(text)
+    defaults = tomllib.loads((SOURCE / "config.toml").read_text())
+    print("\nBon einrichten: Kopf → Termine → Kalender-QR → Fußtext.")
+    print("Alle Angaben bleiben in /etc/terminzettel/config.toml änderbar.")
+    try:
+        header = cfg.setdefault("header", dict(defaults["header"]))
+        header["enabled"] = ask_enabled("Praxiskopf drucken?", header.get("enabled", True))
+        if header["enabled"]:
+            header["text"] = ask_text("Praxiskopf (z. B. Name, Adresse, Telefon)", header.get("text", ""))
+        calendar = cfg.setdefault("calendar_qr", dict(defaults["calendar_qr"]))
+        calendar["enabled"] = ask_enabled("Kalender-QR unter den Terminen drucken?", calendar.get("enabled", True))
+        if calendar["enabled"] and calendar.get("max_width_dots", 360) == 360:
+            calendar["max_width_dots"] = 384
+            print("QR-Breite für den TM-m10: 384 Punkte; damit passen auch fünf Termine ohne Adresse.")
+        footer = cfg.setdefault("footer", dict(defaults["footer"]))
+        footer["enabled"] = ask_enabled("Hinweis am Bonende drucken?", footer.get("enabled", True))
+        if footer["enabled"]:
+            current = footer.get("text", "")
+            footer["text"] = ask_text("Fußtext", current if current.strip() else defaults["footer"]["text"])
+    except (EOFError, KeyboardInterrupt):
+        raise RuntimeError("Einrichtung abgebrochen. Die Druckkonfiguration wurde nicht geändert.") from None
+    return dump_config(cfg)
+
+
 def install():
     changes = plan(SOURCE)  # Konflikte und beschädigte Marker vor Dienständerungen erkennen.
+    changes["/etc/terminzettel/config.toml"] = configure_receipt(changes["/etc/terminzettel/config.toml"])
     queue = tomllib.loads(changes["/etc/terminzettel/config.toml"])["output"]["queue"]
     role = run("testparm", "-s", "--parameter-name=server role").stdout.decode().strip()
     if role not in ("standalone server", "auto"):
@@ -198,7 +257,7 @@ def install():
         raise
     print("Installation abgeschlossen. CUPS-/Bonjour-Drucker Terminzettel ist freigegeben.")
     print("Am Mac unter Drucker hinzufügen > Default den Terminzettel auswählen.")
-    print("Kopf und Fuß: /etc/terminzettel/config.toml")
+    print("Kopf, Kalender-QR und Fußtext: /etc/terminzettel/config.toml")
     print("CUPS und Samba verwenden jetzt RAM-Zwischenspeicher auf diesem Rechner.")
 
 

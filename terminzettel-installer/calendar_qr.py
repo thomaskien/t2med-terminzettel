@@ -109,7 +109,7 @@ def build_qr_image(payload: bytes, config: dict):
               "Q": qrcode.constants.ERROR_CORRECT_Q, "H": qrcode.constants.ERROR_CORRECT_H}
     level = config.get("error_correction", "M")
     quiet = config.get("quiet_zone_modules", 4)
-    width = config.get("max_width_dots", 360)
+    width = config.get("max_width_dots", 384)
     minimum = config.get("min_module_dots", 3)
     if level not in levels or any(type(v) is not int for v in (quiet, width, minimum)):
         raise ValueError("invalid QR configuration")

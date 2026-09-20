@@ -30,8 +30,11 @@ cut = "partial"
 unencodable = "?"
 
 [layout]
-# TM-m10, 58 mm, Font A: sinnvoller Ausgangswert.
+# TM-m10, 58 mm, Font A: Zeichenanzahl in NORMALBREITE.
+# Doppelte Breite halbiert automatisch die Zeichen je Zeile (35 -> 17).
 columns = 35
+double_height = true
+double_width = true
 heading = "IHRE TERMINE"
 heading_double_height = true
 show_patient = true
@@ -49,8 +52,7 @@ text = """
 enabled = true
 align = "center"
 bold = false
-text = """
-"""
+text = "Können Sie einen Termin nicht wahrnehmen, sagen Sie bitte unbedingt Bescheid."
 
 [calendar_qr]
 enabled = true
@@ -66,5 +68,6 @@ location = ""
 caption = "Alle Termine in Kalender übernehmen"
 error_correction = "M"
 quiet_zone_modules = 4
-max_width_dots = 360
+# Volle TM-m10-Breite, auch für fünf Termine ohne Adresse.
+max_width_dots = 384
 min_module_dots = 3

@@ -143,7 +143,8 @@ class RuntimeTests(unittest.TestCase):
     def test_cp858_and_one_cut(self):
         ticket = app.parse_t2med(TEXT.replace("Alpha", "Ä Ö Ü ß €"))
         raw = app.render(ticket, {})
-        self.assertIn("Ä Ö Ü ß €".encode("cp858"), raw)
+        for char in "ÄÖÜß€":
+            self.assertIn(char.encode("cp858"), raw)
         self.assertEqual(raw.count(b"\x1dV\x01"), 1)
         self.assertTrue(raw.endswith(b"\x1dV\x01"))
 
