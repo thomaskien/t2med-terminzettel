@@ -164,12 +164,20 @@ def ask_text(label: str, current: str) -> str:
         lines.append(line.strip())
 
 
+def ask_calendar_title(current: str) -> str:
+    while True:
+        title = input("Terminname im Kalender [" + current + "]: ").strip() or current
+        if title and not any(ord(char) < 32 or 127 <= ord(char) < 160 for char in title):
+            return title
+        print("Bitte einen Terminnamen ohne Steuerzeichen eingeben.")
+
+
 def configure_receipt(text: str) -> str:
     if not sys.stdin.isatty():
         return text
     cfg = tomllib.loads(text)
     defaults = tomllib.loads((SOURCE / "config.toml").read_text())
-    print("\nBon einrichten: Kopf → Termine → Kalender-QR → Fußtext.")
+    print("\nBon einrichten: Kopf → Termine mit je einem QR → Fußtext.")
     print("Alle Angaben bleiben in /etc/terminzettel/config.toml änderbar.")
     try:
         header = cfg.setdefault("header", dict(defaults["header"]))
@@ -177,10 +185,9 @@ def configure_receipt(text: str) -> str:
         if header["enabled"]:
             header["text"] = ask_text("Praxiskopf (z. B. Name, Adresse, Telefon)", header.get("text", ""))
         calendar = cfg.setdefault("calendar_qr", dict(defaults["calendar_qr"]))
-        calendar["enabled"] = ask_enabled("Kalender-QR unter den Terminen drucken?", calendar.get("enabled", True))
-        if calendar["enabled"] and calendar.get("max_width_dots", 360) == 360:
-            calendar["max_width_dots"] = 384
-            print("QR-Breite für den TM-m10: 384 Punkte; damit passen auch fünf Termine ohne Adresse.")
+        calendar["enabled"] = ask_enabled("Einen kleinen Kalender-QR unter jedem Termin drucken?", calendar.get("enabled", True))
+        if calendar["enabled"]:
+            calendar["summary"] = ask_calendar_title(calendar.get("summary", "Termin Arztpraxis"))
         footer = cfg.setdefault("footer", dict(defaults["footer"]))
         footer["enabled"] = ask_enabled("Hinweis am Bonende drucken?", footer.get("enabled", True))
         if footer["enabled"]:

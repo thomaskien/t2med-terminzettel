@@ -22,6 +22,37 @@ def properties(payload, key):
     return [line.split(":", 1)[1] for line in unfolded.split("\r\n") if line.startswith(key + ":")]
 
 
+def receipt_ticket(count):
+    times = ("09:00", "10:30", "12:15", "14:45", "16:00")
+    appointments = [
+        app.Appointment("Do.", "17.09.2026", value, f"Art {index}")
+        for index, value in enumerate(times[:count], 1)
+    ]
+    return app.ParsedTicket("Beispielperson", appointments)
+
+
+def receipt_rasters(raw):
+    """Return raster offsets and images, honoring each ESC/POS raster length."""
+    from PIL import Image
+
+    marker = b"\x1dv0\x00"
+    result = []
+    offset = 0
+    while True:
+        offset = raw.find(marker, offset)
+        if offset < 0:
+            return result
+        width_bytes = int.from_bytes(raw[offset + 4:offset + 6], "little")
+        height = int.from_bytes(raw[offset + 6:offset + 8], "little")
+        end = offset + 8 + width_bytes * height
+        pixels = raw[offset + 8:end]
+        if len(pixels) != width_bytes * height:
+            raise AssertionError("truncated ESC/POS raster")
+        image = Image.frombytes("1", (width_bytes * 8, height), bytes(byte ^ 255 for byte in pixels))
+        result.append((offset, end, image))
+        offset = end
+
+
 class CalendarTests(unittest.TestCase):
     def test_one_two_five_events(self):
         for count in (1, 2, 5):
@@ -120,21 +151,21 @@ class QrTests(unittest.TestCase):
         import zxingcpp
         for count in (1, 2, 3, 5):
             payload = calendar.build_icalendar(starts(count), {})
-            width = 384 if count == 5 else 360
-            image = calendar.build_qr_image(payload, {"max_width_dots": width})
+            image = calendar.build_qr_image(payload, {"max_width_dots": 384})
             result = zxingcpp.read_barcode(image.convert("L"))
             self.assertIsNotNone(result)
             self.assertEqual(result.bytes, payload)
             self.assertEqual(image.mode, "1")
-            self.assertLessEqual(image.width, width)
+            self.assertLessEqual(image.width, 384)
 
     def test_five_events_exceed_old_360_dot_width(self):
         with self.assertRaises(calendar.PayloadTooLarge):
             calendar.build_qr_image(calendar.build_icalendar(starts(5), {}), {"max_width_dots": 360})
 
-    def test_default_width_fits_five_events(self):
-        image = calendar.build_qr_image(calendar.build_icalendar(starts(5), {}), {})
-        self.assertLessEqual(image.width, 384)
+    def test_default_width_makes_small_single_event_qr(self):
+        image = calendar.build_qr_image(calendar.build_icalendar(starts(1), {}), {})
+        self.assertEqual(image.size, (219, 219))
+        self.assertLessEqual(image.width, 256)
 
     def test_address_qr_decodes_byte_for_byte(self):
         import zxingcpp
@@ -175,22 +206,49 @@ class QrTests(unittest.TestCase):
         raw = app.render(app.parse_t2med(TEXT), config)
         self.assertEqual(raw.count(b"\x1dv0\x00"), 1)
         self.assertLess(raw.index(b"Kontrolle"), raw.index(b"\x1dv0\x00"))
+        self.assertIn(b"Termin speichern", raw)
         self.assertLess(raw.index(b"\x1dv0\x00"), raw.index(b"ENDE"))
         self.assertTrue(raw.endswith(b"\x1dV\x01"))
 
-    def test_printed_raster_decodes_as_calendar(self):
-        from PIL import Image
+    def test_printed_rasters_for_one_two_and_five_appointments(self):
+        from icalendar import Calendar
         import zxingcpp
-        raw = app.render(app.parse_t2med(TEXT), {"calendar_qr": {"enabled": True}})
-        offset = raw.index(b"\x1dv0\x00")
-        width = int.from_bytes(raw[offset + 4:offset + 6], "little")
-        height = int.from_bytes(raw[offset + 6:offset + 8], "little")
-        pixels = raw[offset + 8:offset + 8 + width * height]
-        image = Image.frombytes("1", (width * 8, height), bytes(byte ^ 255 for byte in pixels))
-        decoded = zxingcpp.read_barcode(image.convert("L"))
-        self.assertIsNotNone(decoded)
-        self.assertEqual(properties(decoded.bytes, "DTSTART"), ["20260917T070000Z"])
-        self.assertNotIn(b"Testperson", decoded.bytes)
+
+        expected_times = (
+            datetime(2026, 9, 17, 7, 0, tzinfo=timezone.utc),
+            datetime(2026, 9, 17, 8, 30, tzinfo=timezone.utc),
+            datetime(2026, 9, 17, 10, 15, tzinfo=timezone.utc),
+            datetime(2026, 9, 17, 12, 45, tzinfo=timezone.utc),
+            datetime(2026, 9, 17, 14, 0, tzinfo=timezone.utc),
+        )
+        for count in (1, 2, 5):
+            with self.subTest(count=count):
+                ticket = receipt_ticket(count)
+                raw = app.render(ticket, {
+                    "calendar_qr": {"enabled": True},
+                    "footer": {"enabled": True, "text": "BONENDE"},
+                })
+                rasters = receipt_rasters(raw)
+                self.assertEqual(len(rasters), count)
+                decoded_times = []
+                for index, ((offset, end, image), appointment) in enumerate(zip(rasters, ticket.appointments)):
+                    decoded = zxingcpp.read_barcode(image.convert("L"))
+                    self.assertIsNotNone(decoded)
+                    parsed = Calendar.from_ical(decoded.bytes)
+                    events = parsed.walk("VEVENT")
+                    self.assertEqual(len(events), 1)
+                    decoded_times.append(events[0].decoded("DTSTART"))
+                    self.assertEqual(str(events[0]["SUMMARY"]), "Termin Arztpraxis")
+                    self.assertNotIn("LOCATION", events[0])
+                    for forbidden in (ticket.patient, *(item.kind for item in ticket.appointments)):
+                        self.assertNotIn(forbidden.encode(), decoded.bytes)
+
+                    appointment_offset = raw.index(appointment.kind.encode("cp858"))
+                    self.assertLess(appointment_offset, offset)
+                    following = (raw.index(ticket.appointments[index + 1].kind.encode("cp858"))
+                                 if index + 1 < count else raw.index(b"BONENDE"))
+                    self.assertLess(end, following)
+                self.assertEqual(decoded_times, list(expected_times[:count]))
 
     def test_adapter_never_passes_name_or_type(self):
         original = calendar.build_icalendar
@@ -208,7 +266,7 @@ class QrTests(unittest.TestCase):
         for forbidden in (b"Testperson", b"Alpha", b"Kontrolle"):
             self.assertNotIn(forbidden, received[0])
 
-    def test_qr_failure_leaves_text_bon_identical_and_logs_no_payload(self):
+    def test_single_qr_failure_leaves_text_bon_identical_and_logs_no_payload(self):
         ticket = app.parse_t2med(TEXT)
         plain = app.render(ticket, {})
         for error, message in ((RuntimeError("Testperson Alpha"), "calendar QR generation failed"),
@@ -219,10 +277,50 @@ class QrTests(unittest.TestCase):
             self.assertEqual(raw, plain)
             self.assertEqual(output.getvalue(), message + "\n")
 
+    def test_middle_qr_failure_keeps_all_text_and_other_codes(self):
+        from icalendar import Calendar
+        import zxingcpp
+
+        ticket = receipt_ticket(5)
+        original = calendar.build_qr_image
+        calls = 0
+
+        def fail_middle(payload, config):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                raise RuntimeError("Beispielperson Art 3")
+            return original(payload, config)
+
+        output = io.StringIO()
+        with patch.object(calendar, "build_qr_image", side_effect=fail_middle), contextlib.redirect_stderr(output):
+            raw = app.render(ticket, {"calendar_qr": {"enabled": True}})
+
+        for appointment in ticket.appointments:
+            self.assertIn(appointment.time.encode(), raw)
+            self.assertIn(appointment.kind.encode(), raw)
+        self.assertNotIn("Beispielperson", output.getvalue())
+        self.assertNotIn("Art 3", output.getvalue())
+        self.assertEqual(output.getvalue(), "calendar QR generation failed\n")
+        decoded_times = []
+        for _, _, image in receipt_rasters(raw):
+            decoded = zxingcpp.read_barcode(image.convert("L"))
+            self.assertIsNotNone(decoded)
+            event = Calendar.from_ical(decoded.bytes).walk("VEVENT")
+            self.assertEqual(len(event), 1)
+            decoded_times.append(event[0].decoded("DTSTART"))
+        self.assertEqual(decoded_times, [
+            datetime(2026, 9, 17, 7, 0, tzinfo=timezone.utc),
+            datetime(2026, 9, 17, 8, 30, tzinfo=timezone.utc),
+            datetime(2026, 9, 17, 12, 45, tzinfo=timezone.utc),
+            datetime(2026, 9, 17, 14, 0, tzinfo=timezone.utc),
+        ])
+
     def test_disabled_qr_does_not_generate_calendar(self):
-        with patch.object(calendar, "build_icalendar") as generate:
+        with patch.object(calendar, "build_icalendar") as generate, patch.object(calendar, "build_qr_image") as image:
             app.render(app.parse_t2med(TEXT), {"calendar_qr": {"enabled": False}})
         generate.assert_not_called()
+        image.assert_not_called()
 
     def test_malformed_qr_configuration_does_not_break_text_bon(self):
         ticket = app.parse_t2med(TEXT)

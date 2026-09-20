@@ -70,7 +70,12 @@ assert attrs['device-uri'] == 'terminzettel:/'
 assert 'application/pdf' in attrs['document-format-supported']
 assert 'application/postscript' in attrs['document-format-supported']
 destination = Path('/tmp/terminzettel-smoke-output')
-for suffix, data in (('pdf', pdf_fixture()), ('ps', postscript_fixture()), ('image.pdf', image_pdf_fixture())):
+content = (b'BT /F1 11 Tf 50 780 Td (TERMINE) Tj 0 -20 Td (Testperson Alpha) Tj '
+           b'0 -20 Td (Terminzeitpunkt              Termintyp) Tj ')
+for weekday, day in [('Do.', 17), ('Fr.', 18), ('Sa.', 19), ('So.', 20), ('Mo.', 21)]:
+    content += f'0 -20 Td ({weekday} {day}.09.2026, 09:00 Kontrolle) Tj '.encode()
+content += b'ET\n'
+for suffix, data in (('pdf', pdf_fixture()), ('ps', postscript_fixture()), ('image.pdf', image_pdf_fixture()), ('multi.pdf', pdf_fixture(content))):
     destination.unlink(missing_ok=True)
     source = Path('/tmp/terminzettel-smoke.' + suffix)
     source.write_bytes(data)
@@ -84,7 +89,17 @@ for suffix, data in (('pdf', pdf_fixture()), ('ps', postscript_fixture()), ('ima
     assert b'Testperson Alpha' in data
     assert b'\x1d!\x11' in data, 'Double width/height missing'
     assert 'Können Sie einen'.encode('cp858') in data, 'Reminder missing'
-    assert b'\x1dv0\x00' in data, 'QR raster missing'
+    count, position = 0, 0
+    while True:
+        offset = data.find(b'\x1dv0\x00', position)
+        if offset < 0:
+            break
+        width = int.from_bytes(data[offset + 4:offset + 6], 'little')
+        height = int.from_bytes(data[offset + 6:offset + 8], 'little')
+        assert 0 < width * 8 <= 256 and 0 < height <= 256, 'QR is not compact'
+        position = offset + 8 + width * height
+        count += 1
+    assert count == (5 if suffix == 'multi.pdf' else 1), 'One QR per appointment required'
     assert data.endswith(b'\x1dV\x01'), 'Cut missing'
     assert not conn.getJobs(which_jobs='not-completed'), 'Jobs did not finish'
     print(suffix + ' -> IPP/CUPS -> Terminzettel -> ESC/POS + QR -> TMm10: OK', flush=True)

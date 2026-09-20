@@ -18,6 +18,11 @@ spec.loader.exec_module(installer)
 
 
 class ConfigTests(unittest.TestCase):
+    @staticmethod
+    def migrated_calendar(calendar):
+        text = cfg.dump_config({"calendar_qr": calendar})
+        return cfg.tomllib.loads(cfg.migrate_config(text))["calendar_qr"]
+
     def test_unmanaged_share_preserved_and_update_idempotent(self):
         original = "[global]\nworkgroup = PRAXIS\n[other]\npath = /srv/other\n"
         result = cfg.samba_config(original)
@@ -51,6 +56,67 @@ class ConfigTests(unittest.TestCase):
     def test_disabled_ocr_is_preserved_on_update(self):
         result = cfg.tomllib.loads(cfg.migrate_config('[input]\nocr_if_needed=false\n'))
         self.assertFalse(result["input"]["ocr_if_needed"])
+
+    def test_old_calendar_caption_and_widths_are_migrated(self):
+        for width in (360, 384):
+            for caption in (None, "Alle Termine in Kalender übernehmen"):
+                with self.subTest(width=width, caption=caption):
+                    calendar = {"enabled": False, "max_width_dots": width}
+                    if caption is not None:
+                        calendar["caption"] = caption
+                    result = self.migrated_calendar(calendar)
+                    self.assertFalse(result["enabled"])
+                    self.assertEqual(result["caption"], "Termin speichern")
+                    self.assertEqual(result["max_width_dots"], 256)
+
+    def test_calendar_migration_preserves_custom_values(self):
+        custom = self.migrated_calendar({
+            "enabled": False,
+            "summary": "Eigener Kalendername",
+            "caption": "Eigene Beschriftung",
+            "max_width_dots": 384,
+            "include_location": True,
+            "location": "Beispielweg 1",
+        })
+        self.assertEqual(custom, {
+            "enabled": False,
+            "summary": "Eigener Kalendername",
+            "caption": "Eigene Beschriftung",
+            "max_width_dots": 384,
+            "include_location": True,
+            "location": "Beispielweg 1",
+        })
+        other_width = self.migrated_calendar({"caption": "Alle Termine in Kalender übernehmen",
+                                              "max_width_dots": 375})
+        self.assertEqual(other_width["caption"], "Termin speichern")
+        self.assertEqual(other_width["max_width_dots"], 375)
+
+    def test_calendar_migration_is_repeatable_and_keeps_later_width_change(self):
+        first = cfg.migrate_config(cfg.dump_config({
+            "calendar_qr": {"enabled": True, "max_width_dots": 384},
+        }))
+        first_values = cfg.tomllib.loads(first)
+        self.assertEqual(first_values["calendar_qr"]["caption"], "Termin speichern")
+        self.assertEqual(first_values["calendar_qr"]["max_width_dots"], 256)
+        self.assertEqual(cfg.migrate_config(first), first)
+
+        first_values["calendar_qr"]["max_width_dots"] = 384
+        raised = cfg.dump_config(first_values)
+        updated = cfg.migrate_config(raised)
+        self.assertEqual(cfg.tomllib.loads(updated)["calendar_qr"]["max_width_dots"], 384)
+        self.assertEqual(cfg.migrate_config(updated), updated)
+
+    def test_migration_adds_new_calendar_defaults_and_preserves_practice_settings(self):
+        defaults = cfg.tomllib.loads((ROOT / "config.toml").read_text())
+        original = ('[input]\nocr_if_needed=false\n'
+                    '[header]\nenabled=false\ntext="Praxis Beispiel\\nTelefon 123"\n'
+                    '[footer]\nenabled=false\ntext="Eigener Hinweis"\n')
+        result = cfg.tomllib.loads(cfg.migrate_config(original, defaults))
+        self.assertFalse(result["input"]["ocr_if_needed"])
+        self.assertEqual(result["header"], {"enabled": False, "text": "Praxis Beispiel\nTelefon 123"})
+        self.assertEqual(result["footer"], {"enabled": False, "text": "Eigener Hinweis"})
+        self.assertEqual(result["calendar_qr"]["caption"], "Termin speichern")
+        self.assertEqual(result["calendar_qr"]["max_width_dots"], 256)
 
     def test_remote_output_is_not_silently_redirected(self):
         with self.assertRaises(ValueError):

@@ -406,6 +406,38 @@ class EscPosRenderer:
         return bytes(self.buf)
 
 
+def append_calendar_qr(r: EscPosRenderer, appointment: Appointment, cfg: dict[str, Any]) -> None:
+    # Ein Termin pro QR: Kamera-Importer übernehmen aus Sammel-QRs teils nur den ersten.
+    try:
+        calendar = cfg.get("calendar_qr", {})
+        if not isinstance(calendar, dict):
+            raise ValueError("invalid QR configuration")
+        if calendar.get("enabled", False):
+            from calendar_qr import CalendarAppointment, build_icalendar, build_qr_image
+            from escpos import raster_image
+
+            if type(calendar.get("enabled")) is not bool:
+                raise ValueError("invalid QR configuration")
+            payload = build_icalendar([CalendarAppointment(start=appointment.dt)], calendar)
+            bitmap = build_qr_image(payload, calendar)
+            raster = raster_image(bitmap)
+            caption = safe_text(str(calendar.get("caption", "Termin speichern")))
+            addition = EscPosRenderer(cfg)
+            addition.line("")
+            addition.set_align("center")
+            addition.raw(raster)
+            addition.line("")
+            for line in textwrap.wrap(caption, width=r.columns):
+                addition.line(line, align="center")
+            addition.reset_style()
+            r.reset_style()
+            r.raw(bytes(addition.buf))
+    except Exception as exc:
+        # Nur feste technische Meldungen; niemals Payload oder Fremdfehlermeldungen.
+        message = "calendar QR payload too large" if type(exc).__name__ == "PayloadTooLarge" else "calendar QR generation failed"
+        eprint(message)
+
+
 def render_escpos(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
     r = EscPosRenderer(cfg)
     layout = cfg.get("layout", {})
@@ -443,45 +475,10 @@ def render_escpos(ticket: ParsedTicket, cfg: dict[str, Any]) -> bytes:
             r.line(prefix + chunks[0], align="left", bold=False)
             for chunk in chunks[1:]:
                 r.line(" " * len(prefix) + chunk, align="left", bold=False)
+            append_calendar_qr(r, appt, cfg)
 
         if group_idx < len(groups) - 1:
             r.line("")
-
-    # QR entsteht vollständig im Speicher. Ein Fehler lässt den Textbon unverändert.
-    try:
-        calendar = cfg.get("calendar_qr", {})
-        if not isinstance(calendar, dict):
-            raise ValueError("invalid QR configuration")
-        if calendar.get("enabled", False):
-            from calendar_qr import CalendarAppointment, build_icalendar, build_qr_image
-            from escpos import raster_image
-
-            if type(calendar.get("enabled")) is not bool:
-                raise ValueError("invalid QR configuration")
-            times = [CalendarAppointment(start=appointment.dt) for appointment in ticket.appointments]
-            payload = build_icalendar(times, calendar)
-            bitmap = build_qr_image(payload, calendar)
-            raster = raster_image(bitmap)
-            caption = safe_text(str(calendar.get("caption", "Alle Termine in Kalender übernehmen")))
-            addition = EscPosRenderer(cfg)
-            addition.line("")
-            addition.set_align("center")
-            addition.raw(raster)
-            addition.line("")
-            for line in textwrap.wrap(caption, width=r.columns):
-                addition.line(line, align="center")
-            r.reset_style()
-            r.raw(bytes(addition.buf))
-            # addition endete zentriert, r muss den tatsächlichen Zustand kennen.
-            r._align = addition._align
-            r._bold = addition._bold
-            r._double_height = addition._double_height
-            r._double_width = addition._double_width
-            r.reset_style()
-    except Exception as exc:
-        # Nur feste technische Meldungen; niemals Payload oder Fremdfehlermeldungen.
-        message = "calendar QR payload too large" if type(exc).__name__ == "PayloadTooLarge" else "calendar QR generation failed"
-        eprint(message)
 
     footer_text = str(cfg.get("footer", {}).get("text", "")).strip()
     if cfg_bool(cfg.get("footer", {}), "enabled", True) and footer_text:

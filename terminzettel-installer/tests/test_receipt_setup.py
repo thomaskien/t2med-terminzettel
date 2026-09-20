@@ -12,11 +12,13 @@ class ReceiptSetupTests(unittest.TestCase):
             return cfg.tomllib.loads(installer.configure_receipt(cfg.dump_config(config)))
 
     def test_initial_setup_multiline_header_default_footer_and_qr(self):
-        result = self.configure({}, ['', 'Praxis "Beispiel"', 'Musterstraße 1 / Hof', '', '', '', ''])
+        result = self.configure({}, ['', 'Praxis "Beispiel"', 'Musterstraße 1 / Hof', '', '', '', '', ''])
         self.assertEqual(result['header']['text'], 'Praxis "Beispiel"\nMusterstraße 1 / Hof')
         self.assertTrue(result['header']['enabled'])
         self.assertTrue(result['calendar_qr']['enabled'])
-        self.assertEqual(result['calendar_qr']['max_width_dots'], 384)
+        self.assertEqual(result['calendar_qr']['summary'], 'Termin Arztpraxis')
+        self.assertEqual(result['calendar_qr']['caption'], 'Termin speichern')
+        self.assertEqual(result['calendar_qr']['max_width_dots'], 256)
         self.assertTrue(result['footer']['enabled'])
         self.assertEqual(result['footer']['text'], 'Können Sie einen Termin nicht wahrnehmen, sagen Sie bitte unbedingt Bescheid.')
 
@@ -36,13 +38,35 @@ class ReceiptSetupTests(unittest.TestCase):
         self.assertEqual(result['header']['text'], 'Praxis')
         self.assertEqual(result['footer']['text'], 'Hinweis')
 
-    def test_old_default_qr_width_is_updated_when_enabled(self):
-        result = self.configure({'calendar_qr': {'enabled': True, 'max_width_dots': 360}}, ['n', '', 'n'])
-        self.assertEqual(result['calendar_qr']['max_width_dots'], 384)
+    def test_configure_receipt_does_not_migrate_old_qr_width(self):
+        result = self.configure({'calendar_qr': {'enabled': True, 'max_width_dots': 360}}, ['n', '', '', 'n'])
+        self.assertEqual(result['calendar_qr']['max_width_dots'], 360)
 
     def test_individual_qr_width_is_preserved(self):
-        result = self.configure({'calendar_qr': {'enabled': True, 'max_width_dots': 375}}, ['n', '', 'n'])
+        result = self.configure({'calendar_qr': {'enabled': True, 'max_width_dots': 375}}, ['n', '', '', 'n'])
         self.assertEqual(result['calendar_qr']['max_width_dots'], 375)
+
+    def test_custom_calendar_title_is_saved(self):
+        result = self.configure({'calendar_qr': {'enabled': True}}, ['n', '', 'Nachkontrolle Praxis', 'n'])
+        self.assertEqual(result['calendar_qr']['summary'], 'Nachkontrolle Praxis')
+
+    def test_enter_keeps_existing_calendar_title(self):
+        original = {'calendar_qr': {'enabled': True, 'summary': 'Bestehender Kalendername'}}
+        result = self.configure(original, ['n', '', '', 'n'])
+        self.assertEqual(result['calendar_qr']['summary'], 'Bestehender Kalendername')
+
+    def test_disabled_qr_does_not_ask_for_calendar_title(self):
+        original = {'calendar_qr': {'enabled': False, 'summary': 'Bleibt erhalten'}}
+        with patch.object(installer, 'ask_calendar_title') as ask_title:
+            result = self.configure(original, ['n', '', 'n'])
+        ask_title.assert_not_called()
+        self.assertEqual(result['calendar_qr']['summary'], 'Bleibt erhalten')
+
+    def test_calendar_title_rejects_control_characters(self):
+        output = io.StringIO()
+        with patch('builtins.input', side_effect=['Unsicher\x7fTitel', 'Sicherer Titel']), contextlib.redirect_stdout(output):
+            self.assertEqual(installer.ask_calendar_title('Termin Arztpraxis'), 'Sicherer Titel')
+        self.assertIn('ohne Steuerzeichen', output.getvalue())
 
     def test_invalid_answer_and_control_characters_are_retried(self):
         result = self.configure({}, ['maybe', 'j', 'Bad\x1b@', 'Praxis', '', 'n', 'n'])

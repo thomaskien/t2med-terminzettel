@@ -56,7 +56,8 @@ text = "Können Sie einen Termin nicht wahrnehmen, sagen Sie bitte unbedingt Bes
 
 [calendar_qr]
 enabled = true
-# Fester Praxistitel. Keine Patientendaten oder Termintypen einsetzen.
+# Terminname im Handy-Kalender; wird im Installer abgefragt.
+# Keine Patientendaten oder Termintypen einsetzen.
 summary = "Termin Arztpraxis"
 timezone = "Europe/Berlin"
 default_duration_minutes = 15
@@ -65,9 +66,9 @@ default_duration_minutes = 15
 include_location = false
 location = ""
 
-caption = "Alle Termine in Kalender übernehmen"
+caption = "Termin speichern"
 error_correction = "M"
 quiet_zone_modules = 4
-# Volle TM-m10-Breite, auch für fünf Termine ohne Adresse.
-max_width_dots = 384
+# Ein kleiner QR direkt unter jedem Termin.
+max_width_dots = 256
 min_module_dots = 3
